@@ -122,9 +122,10 @@ export class LosSantosEngine {
   };
 
   // Camera & Input
-  private camYaw = 0;
-  private camPitch = 0.22;
-  private camDist = 6.8;
+  private camYaw = Math.PI;
+  private camPitch = 0.18;
+  private camDist = 6.5;
+  private resizeObserver: ResizeObserver | null = null;
   private keys = new Set<string>();
   private mouseDownLeft = false;
   private mouseDownRight = false;
@@ -162,42 +163,46 @@ export class LosSantosEngine {
 
   constructor(container: HTMLElement) {
     this.container = container;
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x131629);
-    this.scene.fog = new THREE.FogExp2(0x191c32, 0.0036);
+    // Clear any residual canvas from React StrictMode double-mount
+    this.container.innerHTML = '';
 
-    this.camera = new THREE.PerspectiveCamera(
-      62,
-      container.clientWidth / Math.max(1, container.clientHeight),
-      0.2,
-      460
-    );
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x6d7c88);
+    this.scene.fog = new THREE.Fog(0x6d7c88, 65, 290);
+
+    const w = Math.max(1, container.clientWidth || window.innerWidth);
+    const h = Math.max(1, container.clientHeight || window.innerHeight);
+
+    this.camera = new THREE.PerspectiveCamera(62, w / h, 0.2, 480);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setSize(container.clientWidth, container.clientHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setSize(w, h);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;';
     container.appendChild(this.renderer.domElement);
 
     // Golden-hour Los Santos Sunset Lighting
-    const ambient = new THREE.AmbientLight(0xfde68a, 0.72);
+    const ambient = new THREE.AmbientLight(0x64748b, 0.9);
     this.scene.add(ambient);
 
-    const hemi = new THREE.HemisphereLight(0x38bdf8, 0xf97316, 0.58);
+    const hemi = new THREE.HemisphereLight(0xffe4c4, 0x3a4438, 1.05);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xfdba74, 1.65);
-    sun.position.set(-90, 130, 80);
+    const sun = new THREE.DirectionalLight(0xffe8d0, 1.55);
+    sun.position.set(-70, 115, 65);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near = 10;
-    sun.shadow.camera.far = 360;
-    const d = 150;
+    sun.shadow.camera.far = 340;
+    const d = 140;
     sun.shadow.camera.left = -d;
     sun.shadow.camera.right = d;
     sun.shadow.camera.top = d;
     sun.shadow.camera.bottom = -d;
+    sun.shadow.bias = -0.0005;
     this.scene.add(sun);
 
     // Build City
@@ -681,6 +686,10 @@ export class LosSantosEngine {
   // === Event Binding ===
   private bindEvents() {
     window.addEventListener('resize', this.onResize);
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.onResize());
+      this.resizeObserver.observe(this.container);
+    }
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('mousemove', this.onMouseMove);
@@ -705,6 +714,7 @@ export class LosSantosEngine {
 
   public dispose() {
     cancelAnimationFrame(this.animId);
+    this.resizeObserver?.disconnect();
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
@@ -712,14 +722,17 @@ export class LosSantosEngine {
     window.removeEventListener('mousedown', this.onMouseDown);
     window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('wheel', this.onWheel);
+    this.renderer.domElement.remove();
     this.renderer.dispose();
   }
 
   private onResize = () => {
     if (!this.container) return;
-    this.camera.aspect = this.container.clientWidth / Math.max(1, this.container.clientHeight);
+    const w = Math.max(1, this.container.clientWidth || window.innerWidth);
+    const h = Math.max(1, this.container.clientHeight || window.innerHeight);
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    this.renderer.setSize(w, h);
   };
 
   private onKeyDown = (e: KeyboardEvent) => {
@@ -830,7 +843,7 @@ export class LosSantosEngine {
     if (document.pointerLockElement === this.renderer.domElement || this.mouseDownRight || this.mouseDownLeft) {
       const sens = state.aiming ? 0.0018 : 0.0028;
       this.camYaw -= e.movementX * sens;
-      this.camPitch = Math.max(-0.55, Math.min(0.75, this.camPitch + e.movementY * sens));
+      this.camPitch = Math.max(-0.16, Math.min(0.62, this.camPitch + e.movementY * sens));
     }
   };
 
@@ -2104,11 +2117,22 @@ export class LosSantosEngine {
     const rightX = -Math.cos(this.camYaw) * shoulderOffset;
     const rightZ = Math.sin(this.camYaw) * shoulderOffset;
 
-    const camX = px + rightX - Math.sin(this.camYaw) * Math.cos(this.camPitch) * targetDist;
-    const camY = py + Math.sin(this.camPitch) * targetDist;
-    const camZ = pz + rightZ - Math.cos(this.camYaw) * Math.cos(this.camPitch) * targetDist;
+    let actualDist = targetDist;
+    for (let step = 1; step <= 6; step++) {
+      const testD = (targetDist * step) / 6;
+      const tx = px + rightX - Math.sin(this.camYaw) * Math.cos(this.camPitch) * testD;
+      const tz = pz + rightZ - Math.cos(this.camYaw) * Math.cos(this.camPitch) * testD;
+      if (this.checkWorldCollision(tx, tz, 0.35)) {
+        actualDist = Math.max(1.4, ((step - 1) / 6) * targetDist);
+        break;
+      }
+    }
 
-    this.camera.position.set(camX, Math.max(0.6, camY), camZ);
+    const camX = px + rightX - Math.sin(this.camYaw) * Math.cos(this.camPitch) * actualDist;
+    const camY = py + Math.sin(this.camPitch) * actualDist;
+    const camZ = pz + rightZ - Math.cos(this.camYaw) * Math.cos(this.camPitch) * actualDist;
+
+    this.camera.position.set(camX, Math.max(1.1, camY), camZ);
 
     const lookX = px + rightX + Math.sin(this.camYaw) * Math.cos(this.camPitch) * 30;
     const lookY = py - Math.sin(this.camPitch) * 30;

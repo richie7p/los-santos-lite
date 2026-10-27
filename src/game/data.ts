@@ -14,7 +14,7 @@ export const PROTAGONISTS: Record<CharacterId, CharacterProfile> = {
     skinColor: 0xf1c27d,
     specialName: '子彈時間 (Bullet Time)',
     specialDesc: '減緩全場時間 65%、射擊零後座力、爆頭傷害提升至 2.5 倍',
-    spawnPos: [-60, -80],
+    spawnPos: [-25, -62],
     defaultWeapon: 'rifle',
     stats: {
       shooting: 94,
