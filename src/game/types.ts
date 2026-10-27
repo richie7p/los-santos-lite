@@ -24,6 +24,7 @@ export interface CharacterProfile {
   specialName: string;
   specialDesc: string;
   spawnPos: [number, number];
+  spawnYaw: number;
   defaultWeapon: WeaponId;
   stats: {
     shooting: number;
@@ -35,22 +36,23 @@ export interface CharacterProfile {
 
 export interface WeaponSpec {
   id: WeaponId;
-  slot: number; // 0..7 in weapon wheel
+  slot: number;
   name: string;
   enName: string;
   category: string;
   damage: number;
-  fireRate: number; // shots per second
+  fireRate: number;
   pellets: number;
   spread: number;
+  recoilKick: number;
   range: number;
   magSize: number;
   maxReserve: number;
-  reloadTime: number; // seconds
+  reloadTime: number;
   automatic: boolean;
-  driveBy: boolean; // usable inside vehicle
+  driveBy: boolean;
   explosive?: boolean;
-  scopeZoom?: number; // FOV when zoomed
+  scopeZoom?: number;
   price: number;
   color: string;
 }
@@ -61,18 +63,31 @@ export interface WeaponAmmoState {
   reserve: number;
 }
 
-export type MissionId = 'pacific_heist' | 'pier_arms' | 'simeon_repo';
+export type MissionId =
+  | 'street_warmup'
+  | 'simeon_repo'
+  | 'pier_arms'
+  | 'pacific_heist'
+  | 'federal_lockdown';
 
 export interface MissionStep {
   id: string;
   instruction: string;
   targetPos: [number, number];
   radius: number;
-  type: 'goto' | 'kill_targets' | 'pickup' | 'enter_car' | 'escape_wanted' | 'deliver_car';
+  type:
+    | 'goto'
+    | 'kill_targets'
+    | 'pickup'
+    | 'enter_car'
+    | 'escape_wanted'
+    | 'deliver_car'
+    | 'destroy_heli';
 }
 
 export interface MissionDef {
   id: MissionId;
+  chapter: number;
   title: string;
   enTitle: string;
   giver: string;
@@ -108,8 +123,21 @@ export interface RadarBlip {
     | 'ammu'
     | 'customs'
     | 'bank'
-    | 'vehicle';
+    | 'cash_truck';
   color: string;
   label?: string;
-  rotation?: number;
+}
+
+export interface NpcDialogueProfile {
+  name: string;
+  job: string;
+  personality: string;
+  linesNormal: string[];
+  linesWanted: string[];
+}
+
+export interface CombatPopup {
+  id: number;
+  text: string;
+  color: string;
 }

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   CharacterId,
+  CombatPopup,
   MissionId,
   RadarBlip,
   WeaponAmmoState,
@@ -13,7 +14,7 @@ export interface PerCharState {
   maxHp: number;
   armor: number;
   maxArmor: number;
-  special: number; // 0..100
+  special: number;
   weapon: WeaponId;
   x: number;
   z: number;
@@ -33,16 +34,24 @@ export interface GameHUDState {
   cash: number;
   cashDelta: { amount: number; id: number } | null;
 
-  wantedStars: number; // 0..5
-  wantedCooldown: number; // 0..1
+  wantedStars: number;
+  wantedSearching: boolean;
 
   weapons: Record<WeaponId, WeaponAmmoState>;
   reloading: boolean;
   reloadProgress: number;
   aiming: boolean;
+  reticleBloom: number; // 0..1
   weaponWheelOpen: boolean;
   charWheelOpen: boolean;
   shopModalOpen: 'ammu' | 'customs' | null;
+
+  dialogue: {
+    name: string;
+    job: string;
+    personality: string;
+    line: string;
+  } | null;
 
   inVehicle: boolean;
   vehicleName: string;
@@ -51,6 +60,7 @@ export interface GameHUDState {
 
   district: string;
   interactPrompt: string | null;
+  talkPrompt: string | null;
 
   activeMissionId: MissionId | null;
   missionStepIdx: number;
@@ -66,29 +76,31 @@ export interface GameHUDState {
   };
 
   hitmarker: { active: boolean; headshot: boolean; ts: number };
+  popups: CombatPopup[];
   kills: number;
   blips: RadarBlip[];
   playerRotation: number;
 
-  // Actions
   setStarted: (v: boolean) => void;
   setPaused: (v: boolean) => void;
   setMuted: (v: boolean) => void;
   addCash: (delta: number) => void;
+  pushPopup: (text: string, color?: string) => void;
   setShopModalOpen: (shop: 'ammu' | 'customs' | null) => void;
+  closeDialogue: () => void;
   updateHUD: (partial: Partial<GameHUDState>) => void;
 }
 
 function createInitialWeapons(): Record<WeaponId, WeaponAmmoState> {
   return {
     unarmed: { unlocked: true, inMag: 1, reserve: 999 },
-    pistol: { unlocked: true, inMag: WEAPONS.pistol.magSize, reserve: 96 },
-    smg: { unlocked: true, inMag: WEAPONS.smg.magSize, reserve: 180 },
-    shotgun: { unlocked: true, inMag: WEAPONS.shotgun.magSize, reserve: 48 },
-    rifle: { unlocked: true, inMag: WEAPONS.rifle.magSize, reserve: 210 },
-    sniper: { unlocked: true, inMag: WEAPONS.sniper.magSize, reserve: 24 },
-    rpg: { unlocked: true, inMag: 1, reserve: 6 },
-    minigun: { unlocked: true, inMag: 200, reserve: 400 },
+    pistol: { unlocked: true, inMag: WEAPONS.pistol.magSize, reserve: 120 },
+    smg: { unlocked: true, inMag: WEAPONS.smg.magSize, reserve: 240 },
+    shotgun: { unlocked: true, inMag: WEAPONS.shotgun.magSize, reserve: 64 },
+    rifle: { unlocked: true, inMag: WEAPONS.rifle.magSize, reserve: 270 },
+    sniper: { unlocked: true, inMag: WEAPONS.sniper.magSize, reserve: 36 },
+    rpg: { unlocked: true, inMag: 1, reserve: 10 },
+    minigun: { unlocked: true, inMag: 200, reserve: 600 },
   };
 }
 
@@ -112,7 +124,7 @@ export const useGameStore = create<GameHUDState>((set) => ({
     franklin: {
       hp: 100,
       maxHp: 100,
-      armor: 80,
+      armor: 100,
       maxArmor: 100,
       special: 100,
       weapon: PROTAGONISTS.franklin.defaultWeapon,
@@ -134,31 +146,35 @@ export const useGameStore = create<GameHUDState>((set) => ({
   skyCamSwitching: false,
   skyCamTarget: null,
 
-  cash: 28500,
+  cash: 35000,
   cashDelta: null,
 
   wantedStars: 0,
-  wantedCooldown: 0,
+  wantedSearching: false,
 
   weapons: createInitialWeapons(),
   reloading: false,
   reloadProgress: 0,
   aiming: false,
+  reticleBloom: 0,
   weaponWheelOpen: false,
   charWheelOpen: false,
   shopModalOpen: null,
+
+  dialogue: null,
 
   inVehicle: false,
   vehicleName: '',
   vehicleSpeedKmh: 0,
   vehicleHpPercent: 100,
 
-  district: '市中心金融特區 (Downtown Pillbox)',
+  district: '洛聖都中央金融大道 (Downtown Central Ave)',
   interactPrompt: null,
+  talkPrompt: null,
 
-  activeMissionId: null,
+  activeMissionId: 'street_warmup',
   missionStepIdx: 0,
-  missionObjectiveText: null,
+  missionObjectiveText: MISSIONS.street_warmup.steps[0].instruction,
   missionProgressText: null,
   completedMissions: [],
 
@@ -169,6 +185,7 @@ export const useGameStore = create<GameHUDState>((set) => ({
   },
 
   hitmarker: { active: false, headshot: false, ts: 0 },
+  popups: [],
   kills: 0,
   blips: [],
   playerRotation: 0,
@@ -181,6 +198,11 @@ export const useGameStore = create<GameHUDState>((set) => ({
       cash: Math.max(0, s.cash + delta),
       cashDelta: { amount: delta, id: Date.now() + Math.random() },
     })),
+  pushPopup: (text, color = '#facc15') =>
+    set((s) => ({
+      popups: [...s.popups.slice(-4), { id: Date.now() + Math.random(), text, color }],
+    })),
   setShopModalOpen: (shopModalOpen) => set({ shopModalOpen }),
+  closeDialogue: () => set({ dialogue: null }),
   updateHUD: (partial) => set((state) => ({ ...state, ...partial })),
 }));

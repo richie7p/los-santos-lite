@@ -1,29 +1,36 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  Crosshair,
   Flame,
-  Shield,
   Volume2,
   VolumeX,
   Zap,
   Car,
-  Award,
   Sparkles,
   Wrench,
   ShoppingBag,
   Play,
-  RotateCcw,
+  MessageSquare,
 } from 'lucide-react';
 import { LosSantosEngine } from './game/engine';
 import { useGameStore } from './game/store';
 import {
+  MISSION_ORDER,
   MISSIONS,
   PROTAGONISTS,
   WEAPON_WHEEL_ORDER,
   WEAPONS,
+  roadCoord,
 } from './game/data';
-import { CharacterId, MissionId, WeaponId } from './game/types';
+import { CharacterId } from './game/types';
 import { sound } from './game/audio';
+
+const SHORT_MISSION_LABELS: Record<string, string> = {
+  street_warmup: '1️⃣ 第一章：極速試駕',
+  simeon_repo: '2️⃣ 第二章：豪車劫持',
+  pier_arms: '3️⃣ 第三章：碼頭軍火',
+  pacific_heist: '4️⃣ 第四章：銀行大劫案',
+  federal_lockdown: '5️⃣ 終章：五星決戰',
+};
 
 export function App() {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -46,7 +53,7 @@ export function App() {
     };
   }, []);
 
-  // Draw GTA V Rectangular Minimap Radar
+  // Draw GTA V Rectangular Minimap Radar (5x5 City Grid)
   useEffect(() => {
     const canvas = radarCanvasRef.current;
     if (!canvas) return;
@@ -64,32 +71,36 @@ export function App() {
     // Wanted flashing police overlay on radar
     if (state.wantedStars > 0) {
       const flashBlue = Math.floor(Date.now() / 260) % 2 === 0;
-      ctx.fillStyle = flashBlue ? 'rgba(59,130,246,0.16)' : 'rgba(239,68,68,0.16)';
+      ctx.fillStyle = state.wantedSearching
+        ? 'rgba(250,204,21,0.14)'
+        : flashBlue
+          ? 'rgba(59,130,246,0.18)'
+          : 'rgba(239,68,68,0.18)';
       ctx.fillRect(0, 0, w, h);
     }
 
     const px = activeCharState.x;
     const pz = activeCharState.z;
-    const scale = 0.85; // world units to radar pixels
+    const scale = 0.72; // world units to radar pixels
 
     ctx.save();
     ctx.translate(w / 2, h / 2);
 
-    // Draw road grid lines relative to player
-    const roads = [-120, -60, 0, 60, 120];
+    // Draw 6x6 road grid lines relative to player
+    const roads = [0, 1, 2, 3, 4, 5].map((i) => roadCoord(i));
     ctx.strokeStyle = '#334155';
-    ctx.lineWidth = 7;
+    ctx.lineWidth = 6.5;
     for (const r of roads) {
       const rx = (r - px) * scale;
       ctx.beginPath();
-      ctx.moveTo(rx, -200);
-      ctx.lineTo(rx, 200);
+      ctx.moveTo(rx, -220);
+      ctx.lineTo(rx, 220);
       ctx.stroke();
 
       const rz = (r - pz) * scale;
       ctx.beginPath();
-      ctx.moveTo(-200, rz);
-      ctx.lineTo(200, rz);
+      ctx.moveTo(-220, rz);
+      ctx.lineTo(220, rz);
       ctx.stroke();
     }
 
@@ -115,7 +126,15 @@ export function App() {
 
       ctx.fillStyle = b.color;
       ctx.beginPath();
-      ctx.arc(bx, bz, b.type === 'mission' ? 6 : b.type === 'heli' ? 5.5 : 4.2, 0, Math.PI * 2);
+      const radius =
+        b.type === 'mission'
+          ? 6.2
+          : b.type === 'cash_truck'
+            ? 5.8
+            : b.type === 'heli'
+              ? 5.5
+              : 4.2;
+      ctx.arc(bx, bz, radius, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#09090b';
       ctx.lineWidth = 1.5;
@@ -132,7 +151,7 @@ export function App() {
     // Player view cone & arrow in center
     ctx.save();
     ctx.rotate(-state.playerRotation + Math.PI);
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.arc(0, 0, 36, -Math.PI * 0.72, -Math.PI * 0.28);
@@ -154,7 +173,14 @@ export function App() {
     ctx.restore();
 
     ctx.restore();
-  }, [state.blips, activeCharState.x, activeCharState.z, state.playerRotation, state.wantedStars]);
+  }, [
+    state.blips,
+    activeCharState.x,
+    activeCharState.z,
+    state.playerRotation,
+    state.wantedStars,
+    state.wantedSearching,
+  ]);
 
   const toggleMute = () => {
     const next = !state.muted;
@@ -163,7 +189,10 @@ export function App() {
   };
 
   const isSniperScoped = state.aiming && activeCharState.weapon === 'sniper';
-  const hitmarkerFresh = state.hitmarker.active && performance.now() - state.hitmarker.ts < 160;
+  const hitmarkerFresh = state.hitmarker.active && performance.now() - state.hitmarker.ts < 170;
+  const reticleGap = Math.round(
+    (state.aiming ? 6 : 11) + state.reticleBloom * (state.aiming ? 10 : 18)
+  );
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-zinc-950 select-none">
@@ -209,21 +238,42 @@ export function App() {
         </div>
       )}
 
-      {/* Dynamic Center Crosshair & Hitmarker */}
+      {/* Dynamic Recoil-Aware Crosshair & Hitmarker */}
       {state.started && !state.paused && !state.weaponWheelOpen && !state.charWheelOpen && !isSniperScoped && (
         <div className="pointer-events-none fixed inset-0 z-15 flex items-center justify-center">
           <div className="relative flex items-center justify-center">
             {/* Center dot */}
             <div
               className={`w-1.5 h-1.5 rounded-full transition-transform ${
-                state.aiming ? 'bg-red-400 scale-125' : 'bg-white/90'
+                state.aiming ? 'bg-red-400 scale-125' : 'bg-white/95'
               }`}
             />
-            {/* Outer crosshair ticks */}
+            {/* 4 Dynamic Expanding Crosshair Ticks */}
             <div
-              className={`absolute border border-white/60 rounded-full transition-all duration-100 ${
-                state.aiming ? 'w-6 h-6 border-red-400/80' : 'w-9 h-9'
+              className={`absolute w-[2px] h-2.5 ${state.aiming ? 'bg-red-400/90' : 'bg-white/85'}`}
+              style={{ transform: `translateY(-${reticleGap}px)` }}
+            />
+            <div
+              className={`absolute w-[2px] h-2.5 ${state.aiming ? 'bg-red-400/90' : 'bg-white/85'}`}
+              style={{ transform: `translateY(${reticleGap}px)` }}
+            />
+            <div
+              className={`absolute h-[2px] w-2.5 ${state.aiming ? 'bg-red-400/90' : 'bg-white/85'}`}
+              style={{ transform: `translateX(-${reticleGap}px)` }}
+            />
+            <div
+              className={`absolute h-[2px] w-2.5 ${state.aiming ? 'bg-red-400/90' : 'bg-white/85'}`}
+              style={{ transform: `translateX(${reticleGap}px)` }}
+            />
+            {/* Outer subtle ring */}
+            <div
+              className={`absolute border rounded-full transition-all duration-75 ${
+                state.aiming ? 'border-red-400/60' : 'border-white/35'
               }`}
+              style={{
+                width: `${reticleGap * 2.1}px`,
+                height: `${reticleGap * 2.1}px`,
+              }}
             />
             {/* Hitmarker X */}
             {hitmarkerFresh && (
@@ -232,7 +282,7 @@ export function App() {
                   state.hitmarker.headshot ? 'text-red-500 scale-125' : 'text-white'
                 }`}
               >
-                <svg viewBox="0 0 24 24" className="w-full h-full stroke-current stroke-[2.6]">
+                <svg viewBox="0 0 24 24" className="w-full h-full stroke-current stroke-[2.8]">
                   <line x1="3" y1="3" x2="9" y2="9" />
                   <line x1="21" y1="3" x2="15" y2="9" />
                   <line x1="3" y1="21" x2="9" y2="15" />
@@ -244,15 +294,30 @@ export function App() {
         </div>
       )}
 
-      {/* === TOP-LEFT: Heist Mission Dispatch & Quick Sandbox Bar === */}
+      {/* === COMBAT & EVENT POPUP FEED (Headshots, Cash Truck Heists, Special Abilities) === */}
+      {state.started && state.popups.length > 0 && (
+        <div className="pointer-events-none fixed top-20 left-1/2 -translate-x-1/2 z-25 flex flex-col items-center gap-1.5">
+          {state.popups.map((p) => (
+            <div
+              key={p.id}
+              className="px-4 py-1.5 rounded-full bg-zinc-950/90 border border-zinc-700/80 shadow-xl backdrop-blur-md text-xs font-extrabold tracking-wide animate-bounce"
+              style={{ color: p.color }}
+            >
+              {p.text}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* === TOP-LEFT: 5-Chapter Heist Campaign Dispatch & Quick Sandbox Bar === */}
       {state.started && (
-        <div className="fixed top-4 left-4 z-20 flex flex-col gap-2 max-w-sm">
+        <div className="fixed top-4 left-4 z-20 flex flex-col gap-2 max-w-md">
           {/* Active Mission Objective Card */}
           {state.activeMissionId ? (
             <div className="bg-zinc-950/90 border-l-4 border-yellow-400 px-4 py-3 rounded-r-xl shadow-2xl backdrop-blur-md">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[11px] font-bold tracking-wider uppercase text-yellow-400">
-                  進行中劫案 · {MISSIONS[state.activeMissionId].title}
+                  進行中行動 · {MISSIONS[state.activeMissionId].title}
                 </span>
                 <span className="text-xs font-mono text-emerald-400 font-bold">
                   +${MISSIONS[state.activeMissionId].reward.toLocaleString()}
@@ -268,14 +333,15 @@ export function App() {
               )}
             </div>
           ) : (
-            <div className="bg-zinc-950/85 border border-zinc-800/90 px-3.5 py-2.5 rounded-xl shadow-xl backdrop-blur-md">
+            <div className="bg-zinc-950/90 border border-zinc-800/90 px-3.5 py-2.5 rounded-xl shadow-xl backdrop-blur-md">
               <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                <span>📱 萊斯特劫案合約連線 (一鍵開打)</span>
-                <span className="text-emerald-400 font-mono">已完成 {state.completedMissions.length}/3</span>
+                <span>📱 萊斯特五章主線劫案行動 (點擊任一章節開打)</span>
+                <span className="text-emerald-400 font-mono">
+                  進度 {state.completedMissions.length}/{MISSION_ORDER.length}
+                </span>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {(['pacific_heist', 'pier_arms', 'simeon_repo'] as MissionId[]).map((mId) => {
-                  const m = MISSIONS[mId];
+                {MISSION_ORDER.map((mId) => {
                   const done = state.completedMissions.includes(mId);
                   return (
                     <button
@@ -287,7 +353,7 @@ export function App() {
                           : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700 text-zinc-100'
                       }`}
                     >
-                      <span>{mId === 'pacific_heist' ? '🏦 太平洋銀行劫案' : mId === 'pier_arms' ? '⚓ 碼頭軍火戰' : '🏎️ 豪車劫持'}</span>
+                      <span>{SHORT_MISSION_LABELS[mId] || MISSIONS[mId].title}</span>
                     </button>
                   );
                 })}
@@ -296,7 +362,7 @@ export function App() {
           )}
 
           {/* Quick Sandbox Cheats / Toolbar */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-zinc-950/75 border border-zinc-800/80 px-2.5 py-1.5 rounded-xl backdrop-blur-md text-[11px]">
+          <div className="flex flex-wrap items-center gap-1.5 bg-zinc-950/80 border border-zinc-800/80 px-2.5 py-1.5 rounded-xl backdrop-blur-md text-[11px]">
             <button
               onClick={() => engineRef.current?.triggerInstantAction('spawn_supercar')}
               className="px-2 py-1 rounded bg-sky-500/15 hover:bg-sky-500/30 border border-sky-500/30 text-sky-300 font-medium cursor-pointer flex items-center gap-1"
@@ -338,21 +404,28 @@ export function App() {
       {state.started && (
         <div className="fixed top-4 right-4 z-20 flex flex-col items-end gap-2">
           {/* Wanted 5-Star Row */}
-          <div className="flex items-center gap-1 bg-zinc-950/80 px-3 py-1.5 rounded-full border border-zinc-800/80 backdrop-blur-md">
+          <div className="flex items-center gap-1 bg-zinc-950/85 px-3 py-1.5 rounded-full border border-zinc-800/80 backdrop-blur-md">
             {[1, 2, 3, 4, 5].map((star) => {
               const active = star <= state.wantedStars;
               return (
                 <span
                   key={star}
                   className={`text-lg leading-none ${
-                    active ? 'text-amber-400 animate-wanted drop-shadow-[0_0_8px_rgba(251,191,36,0.9)]' : 'text-zinc-700'
+                    active
+                      ? 'text-amber-400 animate-wanted drop-shadow-[0_0_8px_rgba(251,191,36,0.9)]'
+                      : 'text-zinc-700'
                   }`}
                 >
                   ★
                 </span>
               );
             })}
-            {state.wantedStars >= 3 && (
+            {state.wantedStars > 0 && state.wantedSearching && (
+              <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                🔍 警方搜索中
+              </span>
+            )}
+            {state.wantedStars >= 3 && !state.wantedSearching && (
               <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40">
                 🚁 武裝直升機鎖定
               </span>
@@ -405,9 +478,11 @@ export function App() {
                 </div>
                 <div className="text-[10px] text-zinc-400 mt-0.5">
                   {state.reloading ? (
-                    <span className="text-amber-400 font-bold">換彈中 {Math.round(state.reloadProgress * 100)}%</span>
+                    <span className="text-amber-400 font-bold">
+                      換彈中 {Math.round(state.reloadProgress * 100)}%
+                    </span>
                   ) : (
-                    <span>[R] 換彈 · 右鍵開鏡</span>
+                    <span>[R] 換彈 · 右鍵精準開鏡</span>
                   )}
                 </div>
               </div>
@@ -430,21 +505,50 @@ export function App() {
         </div>
       )}
 
-      {/* === INTERACTION PROMPT BANNER === */}
-      {state.started && state.interactPrompt && !state.shopModalOpen && (
-        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-20 bg-zinc-950/90 border border-amber-400/50 text-amber-200 px-5 py-2.5 rounded-full text-sm font-bold shadow-2xl backdrop-blur-md flex items-center gap-2 animate-bounce">
-          <Sparkles className="w-4 h-4 text-amber-400" />
-          <span>{state.interactPrompt}</span>
+      {/* === INTERACTION & CITIZEN TALK PROMPTS === */}
+      {state.started && !state.shopModalOpen && (state.interactPrompt || state.talkPrompt) && (
+        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2">
+          {state.interactPrompt && (
+            <div className="bg-zinc-950/90 border border-amber-400/50 text-amber-200 px-5 py-2 rounded-full text-sm font-bold shadow-2xl backdrop-blur-md flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>{state.interactPrompt}</span>
+            </div>
+          )}
+          {state.talkPrompt && !state.dialogue && (
+            <div className="bg-zinc-950/85 border border-sky-400/40 text-sky-200 px-4 py-1.5 rounded-full text-xs font-semibold shadow-xl backdrop-blur-md flex items-center gap-1.5">
+              <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
+              <span>{state.talkPrompt}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* === CITIZEN DIALOGUE CARD ([F]) === */}
+      {state.started && state.dialogue && (
+        <div
+          onClick={() => state.closeDialogue()}
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-25 max-w-lg w-[90%] bg-zinc-950/95 border border-sky-500/40 rounded-2xl px-5 py-3.5 shadow-2xl backdrop-blur-md cursor-pointer"
+        >
+          <div className="flex items-center justify-between text-xs font-bold text-sky-400 mb-1">
+            <span>
+              💬 {state.dialogue.name} · {state.dialogue.job} ({state.dialogue.personality})
+            </span>
+            <span className="text-[10px] text-zinc-500">點擊關閉</span>
+          </div>
+          <p className="text-sm text-zinc-100 leading-relaxed">{state.dialogue.line}</p>
         </div>
       )}
 
       {/* === BOTTOM-LEFT: GTA V Rectangular Radar + Health / Armor / Special Bars === */}
       {state.started && (
-        <div className="fixed bottom-4 left-4 z-20 flex flex-col w-[248px] bg-zinc-950/95 border-2 border-zinc-800 rounded-lg overflow-hidden shadow-2xl">
-          <div className="relative w-full h-[148px]">
-            <canvas ref={radarCanvasRef} width={248} height={148} className="w-full h-full block" />
-            <div className="absolute top-1.5 left-2 text-[10px] font-semibold text-zinc-300 bg-zinc-950/75 px-1.5 py-0.5 rounded">
+        <div className="fixed bottom-4 left-4 z-20 flex flex-col w-[252px] bg-zinc-950/95 border-2 border-zinc-800 rounded-lg overflow-hidden shadow-2xl">
+          <div className="relative w-full h-[152px]">
+            <canvas ref={radarCanvasRef} width={252} height={152} className="w-full h-full block" />
+            <div className="absolute top-1.5 left-2 text-[10px] font-semibold text-zinc-300 bg-zinc-950/80 px-1.5 py-0.5 rounded">
               {state.district.split(' ')[0]}
+            </div>
+            <div className="absolute top-1.5 right-2 text-[9px] font-mono text-emerald-400 bg-zinc-950/80 px-1.5 py-0.5 rounded">
+              $ 運鈔車巡邏中
             </div>
             <div className="absolute bottom-1.5 right-2 text-[10px] font-mono text-zinc-400 bg-zinc-950/80 px-1.5 py-0.5 rounded">
               擊殺 {state.kills}
@@ -499,7 +603,7 @@ export function App() {
             <div className="text-2xl font-black font-mono text-white leading-none">
               {state.vehicleSpeedKmh}
             </div>
-            <div className="text-[10px] font-mono text-zinc-400">KM/H · [Space] 甩尾 · [E] 下車</div>
+            <div className="text-[10px] font-mono text-zinc-400">KM/H · [Space] 手煞甩尾 · [E] 下車</div>
           </div>
         </div>
       )}
@@ -664,7 +768,9 @@ export function App() {
                   >
                     <div className="text-left">
                       <div className="font-bold text-white">補滿全 8 種武器彈匣與備彈</div>
-                      <div className="text-xs text-zinc-400">手槍、衝鋒槍、霰彈、步槍、狙擊、RPG 與加特林全滿</div>
+                      <div className="text-xs text-zinc-400">
+                        手槍、衝鋒槍、霰彈、步槍、狙擊、RPG 與加特林全滿
+                      </div>
                     </div>
                     <span className="font-mono font-bold text-emerald-400">$1,200</span>
                   </button>
@@ -674,7 +780,9 @@ export function App() {
                   >
                     <div className="text-left">
                       <div className="font-bold text-white">重型複合防彈衣 + 急救包</div>
-                      <div className="text-xs text-zinc-400">立即恢復 100% 生命值與 100% 藍色防彈護甲</div>
+                      <div className="text-xs text-zinc-400">
+                        立即恢復 100% 生命值與 100% 藍色防彈護甲
+                      </div>
                     </div>
                     <span className="font-mono font-bold text-emerald-400">$800</span>
                   </button>
@@ -684,7 +792,9 @@ export function App() {
                   >
                     <div className="text-left">
                       <div className="font-bold text-amber-300">重裝毀滅軍火套組 (RPG + 火神機槍)</div>
-                      <div className="text-xs text-zinc-400">直接切換至 RPG 火箭筒並補滿重型火器彈藥</div>
+                      <div className="text-xs text-zinc-400">
+                        直接切換至 RPG 火箭筒並補滿重型火器彈藥
+                      </div>
                     </div>
                     <span className="font-mono font-bold text-emerald-400">$3,500</span>
                   </button>
@@ -707,8 +817,12 @@ export function App() {
                     className="w-full p-3.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 flex items-center justify-between cursor-pointer"
                   >
                     <div className="text-left">
-                      <div className="font-bold text-amber-300">更換偽造車牌 · 立即消除所有通緝星等</div>
-                      <div className="text-xs text-zinc-400">撤離全數 LSPD 警車、特警與空中武裝直升機</div>
+                      <div className="font-bold text-amber-300">
+                        更換偽造車牌 · 立即消除所有通緝星等
+                      </div>
+                      <div className="text-xs text-zinc-400">
+                        撤離全數 LSPD 警車、特警與空中武裝直升機
+                      </div>
                     </div>
                     <span className="font-mono font-bold text-emerald-400">$1,500</span>
                   </button>
@@ -718,7 +832,9 @@ export function App() {
                   >
                     <div className="text-left">
                       <div className="font-bold text-white">板金引擎全面修復與防彈強化</div>
-                      <div className="text-xs text-zinc-400">完全修復當前座駕耐久度並消除引擎黑煙</div>
+                      <div className="text-xs text-zinc-400">
+                        完全修復當前座駕耐久度並消除引擎黑煙
+                      </div>
                     </div>
                     <span className="font-mono font-bold text-emerald-400">$600</span>
                   </button>
@@ -765,20 +881,20 @@ export function App() {
         </div>
       )}
 
-      {/* === START MENU / PAUSE OVERLAY === */}
+      {/* === START MENU / PAUSE OVERLAY (Semi-transparent over live orbiting 3D city!) === */}
       {(!state.started || state.paused) && (
-        <div className="fixed inset-0 z-50 bg-zinc-950/85 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="max-w-3xl w-full bg-zinc-900/95 border border-zinc-800 rounded-3xl p-8 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-zinc-950/45 backdrop-blur-[2px] flex items-center justify-center p-6">
+          <div className="max-w-3xl w-full bg-zinc-950/90 border border-zinc-700/80 rounded-3xl p-8 shadow-2xl">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-5">
               <div>
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold mb-2">
-                  <span>GRAND THEFT ACTION SANDBOX · THREE.JS 3D SHOOTER</span>
+                  <span>GRAND THEFT ACTION SANDBOX · PHOTOREALISTIC 3D EDITION</span>
                 </div>
                 <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white">
                   洛聖都行動 · <span className="text-amber-400">Los Santos Lite</span>
                 </h1>
-                <p className="text-sm text-zinc-400 mt-1">
-                  三主角高空衛星切換 × 八格慢動作武器輪盤 × 五星特警與武裝直升機槍戰 × 太平洋銀行大劫案
+                <p className="text-sm text-zinc-300 mt-1">
+                  擬真紋理 5×5 開放世界 × 三主角衛星切換 × 五章連續大劫案戰役 × 裝甲運鈔車攔截 × 五星特警與武裝直升機
                 </p>
               </div>
               <button
@@ -804,46 +920,48 @@ export function App() {
                     onClick={() => engineRef.current?.switchCharacter(cid)}
                     className={`p-4 rounded-2xl border transition cursor-pointer ${
                       isSelected
-                        ? 'bg-zinc-800/90 border-white shadow-lg'
-                        : 'bg-zinc-950/70 border-zinc-800 hover:border-zinc-700'
+                        ? 'bg-zinc-800/95 border-amber-400 shadow-lg'
+                        : 'bg-zinc-900/75 border-zinc-800 hover:border-zinc-700'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between mb-1.5">
                       <span
-                        className="text-xs font-black px-2 py-0.5 rounded text-zinc-950"
+                        className="text-xs font-black font-mono px-2 py-0.5 rounded text-zinc-950"
                         style={{ backgroundColor: p.color }}
                       >
-                        主角 {idx + 1} · {p.enName.split(' ')[0]}
+                        按鍵 [{idx + 1}]
                       </span>
-                      <span className="text-xs font-mono text-zinc-400">按鍵 [{idx + 1}]</span>
+                      <span className="text-xs text-zinc-400 font-semibold">{p.title}</span>
                     </div>
-                    <div className="text-base font-bold text-white mt-2">{p.name}</div>
-                    <div className="text-xs font-semibold mt-0.5" style={{ color: p.color }}>
-                      ★ {p.specialName}
+                    <div className="text-base font-extrabold text-white">{p.name}</div>
+                    <div className="text-xs font-bold text-amber-300 mt-2">
+                      ⚡ [Q] {p.specialName}
                     </div>
-                    <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">{p.specialDesc}</p>
+                    <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                      {p.specialDesc}
+                    </p>
                   </div>
                 );
               })}
             </div>
 
-            {/* Controls Quick Reference */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 text-xs bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800/90">
+            {/* Controls Quick Reference Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs bg-zinc-900/90 border border-zinc-800 rounded-2xl p-4">
               <div>
-                <span className="text-amber-400 font-bold block">移動 / 駕車</span>
-                <span className="text-zinc-300">WASD 移動 · Shift 衝刺 · Space 跳躍/甩尾 · E 上下車</span>
+                <span className="font-mono font-bold text-amber-400">[W A S D / Shift]</span>
+                <div className="text-zinc-300 mt-0.5">慣性移動 / 衝刺 / 駕駛載具</div>
               </div>
               <div>
-                <span className="text-sky-400 font-bold block">3D 射擊與戰術</span>
-                <span className="text-zinc-300">左鍵開火(支援車上掃射) · 右鍵開鏡 · R 換彈 · C 翻滾</span>
+                <span className="font-mono font-bold text-amber-400">[左鍵 / 右鍵]</span>
+                <div className="text-zinc-300 mt-0.5">後座力開火 / 精準開鏡 & 狙擊鏡</div>
               </div>
               <div>
-                <span className="text-emerald-400 font-bold block">八格武器輪盤</span>
-                <span className="text-zinc-300">按住 [Tab] 慢動作選槍 · 滾輪或數字鍵 4–0 快速切槍</span>
+                <span className="font-mono font-bold text-amber-400">[Tab / 滾輪]</span>
+                <div className="text-zinc-300 mt-0.5">慢動作八格武器輪盤</div>
               </div>
               <div>
-                <span className="text-orange-400 font-bold block">三主角與特殊能力</span>
-                <span className="text-zinc-300">按 [1/2/3] 衛星高空切換主角 · 按 [Q] 啟動主角大招</span>
+                <span className="font-mono font-bold text-amber-400">[E / F / Space]</span>
+                <div className="text-zinc-300 mt-0.5">搶車進店 / 市民對話 / 載具甩尾</div>
               </div>
             </div>
           </div>
@@ -852,4 +970,6 @@ export function App() {
     </div>
   );
 }
+
 export default App;
+

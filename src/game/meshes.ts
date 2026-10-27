@@ -15,6 +15,13 @@ export interface CharacterRig {
   hpBarFill?: THREE.Mesh;
 }
 
+function shareMat(color: number, extra?: THREE.MeshStandardMaterialParameters) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.65, ...extra });
+}
+
+/**
+ * Creates a detailed 3D character rig facing -Z at rotation.y = 0.
+ */
 export function createCharacterRig(opts: {
   suitColor: number;
   shirtColor: number;
@@ -26,139 +33,170 @@ export function createCharacterRig(opts: {
 }): CharacterRig {
   const root = new THREE.Group();
 
-  const skinMat = new THREE.MeshStandardMaterial({ color: opts.skinColor, roughness: 0.65 });
-  const suitMat = new THREE.MeshStandardMaterial({
-    color: opts.isSwat ? 0x111827 : opts. isCop ? 0x1e3a8a : opts.suitColor,
-    roughness: 0.55,
+  const skinM = shareMat(opts.skinColor, { roughness: 0.52 });
+  const suitM = shareMat(opts.isSwat ? 0x18181b : opts.isCop ? 0x1e3a8a : opts.suitColor, {
+    roughness: 0.58,
   });
-  const shirtMat = new THREE.MeshStandardMaterial({
-    color: opts.isSwat ? 0x374151 : opts.isCop ? 0x1e40af : opts.shirtColor,
-    roughness: 0.6,
+  const shirtM = shareMat(opts.isSwat ? 0x334155 : opts.isCop ? 0x2563eb : opts.shirtColor, {
+    roughness: 0.62,
   });
-  const pantsMat = new THREE.MeshStandardMaterial({
-    color: opts.isSwat ? 0x09090b : opts.isCop ? 0x0f172a : 0x18181b,
-    roughness: 0.7,
+  const pantsM = shareMat(opts.isSwat ? 0x09090b : opts.isCop ? 0x0f172a : 0x1c2430, {
+    roughness: 0.72,
   });
-
-  // Legs
-  const leftLeg = new THREE.Group();
-  leftLeg.position.set(-0.2, 0.85, 0);
-  const leftLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.85, 0.3), pantsMat);
-  leftLegMesh.position.y = -0.42;
-  leftLegMesh.castShadow = true;
-  leftLeg.add(leftLegMesh);
-  root.add(leftLeg);
-
-  const rightLeg = new THREE.Group();
-  rightLeg.position.set(0.2, 0.85, 0);
-  const rightLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.85, 0.3), pantsMat);
-  rightLegMesh.position.y = -0.42;
-  rightLegMesh.castShadow = true;
-  rightLeg.add(rightLegMesh);
-  root.add(rightLeg);
-
-  // Torso
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.92, 0.42), suitMat);
-  torso.position.set(0, 1.31, 0);
-  torso.castShadow = true;
-  root.add(torso);
-
-  // Chest accent / vest / tie
-  const chestVest = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.82, 0.45), shirtMat);
-  chestVest.position.set(0, 1.31, 0.01);
-  root.add(chestVest);
-
-  // Head
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.5, 0.48), skinMat);
-  head.position.set(0, 2.06, 0);
-  head.castShadow = true;
-  root.add(head);
-
-  // Sunglasses / Visor (faces +Z forward)
-  const glassesMat = new THREE.MeshStandardMaterial({
-    color: opts.isSwat ? 0x38bdf8 : 0x09090b,
+  const hairM = shareMat(opts.isSwat ? 0x111827 : opts.isCop ? 0x172554 : opts.hairColor, {
+    roughness: 0.78,
+  });
+  const shoeM = shareMat(0x18181b, { roughness: 0.55 });
+  const visorM = shareMat(opts.isSwat ? 0x38bdf8 : 0x09090b, {
     metalness: 0.8,
     roughness: 0.2,
   });
-  const glasses = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.1), glassesMat);
-  glasses.position.set(0, 2.08, 0.22);
-  root.add(glasses);
 
-  // Hair or Tactical Helmet
-  const hairMat = new THREE.MeshStandardMaterial({
-    color: opts.isSwat ? 0x18181b : opts.isCop ? 0x1e3a8a : opts.hairColor,
-    roughness: 0.6,
-  });
+  // Hips
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.2, 0.26), pantsM);
+  hips.position.y = 0.76;
+  root.add(hips);
+
+  // Torso
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.56, 0.29), suitM);
+  torso.position.y = 1.14;
+  root.add(torso);
+
+  // Tactical Vest / Inner Shirt Accent
+  const vest = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.5, 0.31), shirtM);
+  vest.position.set(0, 1.14, -0.01);
+  root.add(vest);
+
+  // Neck
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.1, 8), skinM);
+  neck.position.y = 1.45;
+  root.add(neck);
+
+  // Head
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.33, 0.29), skinM);
+  head.position.y = 1.64;
+  root.add(head);
+
+  // Hair / Helmet
   const hair = new THREE.Mesh(
-    new THREE.BoxGeometry(0.52, opts.isSwat || opts.isCop ? 0.22 : 0.16, 0.54),
-    hairMat
+    new THREE.BoxGeometry(0.33, opts.isSwat || opts.isCop ? 0.16 : 0.12, 0.31),
+    hairM
   );
-  hair.position.set(0, 2.28, 0);
+  hair.position.y = 1.8;
   root.add(hair);
 
-  // Arms
+  // Sunglasses / Tactical Visor on -Z face
+  const glasses = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.075, 0.05), visorM);
+  glasses.position.set(0, 1.65, -0.14);
+  root.add(glasses);
+
+  // Left Arm (pivoted at shoulder)
   const leftArm = new THREE.Group();
-  leftArm.position.set(-0.52, 1.68, 0);
-  const leftArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.78, 0.26), suitMat);
-  leftArmMesh.position.y = -0.34;
-  leftArmMesh.castShadow = true;
-  leftArm.add(leftArmMesh);
+  leftArm.position.set(-0.32, 1.36, 0);
+  const leftSleeve = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.52, 0.14), suitM);
+  leftSleeve.position.y = -0.22;
+  const leftHand = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 0.11), skinM);
+  leftHand.position.y = -0.5;
+  leftArm.add(leftSleeve, leftHand);
   root.add(leftArm);
 
+  // Right Arm (pivoted at shoulder, holds 3D Weapon)
   const rightArm = new THREE.Group();
-  rightArm.position.set(0.52, 1.68, 0);
-  const rightArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.78, 0.26), suitMat);
-  rightArmMesh.position.y = -0.34;
-  rightArmMesh.castShadow = true;
-  rightArm.add(rightArmMesh);
+  rightArm.position.set(0.32, 1.36, 0);
+  const rightSleeve = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.52, 0.14), suitM);
+  rightSleeve.position.y = -0.22;
+  const rightHand = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 0.11), skinM);
+  rightHand.position.y = -0.5;
+  rightArm.add(rightSleeve, rightHand);
 
-  // Gun Group attached to right hand
+  // 3D Weapon Group attached to Right Hand (points -Z when arm is raised)
   const gunGroup = new THREE.Group();
-  gunGroup.position.set(0, -0.62, 0.26);
+  gunGroup.position.set(0, -0.5, -0.16);
 
-  const gunBodyMat = new THREE.MeshStandardMaterial({
+  const gunMetal = new THREE.MeshStandardMaterial({
     color: 0x18181b,
-    metalness: 0.75,
-    roughness: 0.3,
+    metalness: 0.78,
+    roughness: 0.25,
   });
-  const gunBarrel = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.14, 0.68), gunBodyMat);
-  gunBarrel.position.set(0, 0, 0.22);
-  gunGroup.add(gunBarrel);
+  const gunAccent = new THREE.MeshStandardMaterial({
+    color: 0x475569,
+    metalness: 0.65,
+    roughness: 0.35,
+  });
+
+  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.48), gunMetal);
+  receiver.position.set(0, 0.03, -0.18);
+  receiver.name = 'gunReceiver';
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.38, 8), gunAccent);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.05, -0.42);
+  barrel.name = 'gunBarrel';
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.08), gunAccent);
+  mag.position.set(0, -0.08, -0.16);
+  mag.rotation.x = 0.2;
+  gunGroup.add(receiver, barrel, mag);
 
   const flashMat = new THREE.MeshBasicMaterial({
     color: 0xfef08a,
     transparent: true,
     opacity: 0.95,
   });
-  const muzzleFlash = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), flashMat);
-  muzzleFlash.position.set(0, 0.02, 0.64);
+  const muzzleFlash = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), flashMat);
+  muzzleFlash.position.set(0, 0.05, -0.66);
   muzzleFlash.visible = false;
   gunGroup.add(muzzleFlash);
 
   rightArm.add(gunGroup);
   root.add(rightArm);
 
+  // Left Leg (pivoted at hip)
+  const leftLeg = new THREE.Group();
+  leftLeg.position.set(-0.13, 0.7, 0);
+  const leftThigh = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.56, 0.17), pantsM);
+  leftThigh.position.y = -0.28;
+  const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.09, 0.25), shoeM);
+  leftShoe.position.set(0, -0.6, -0.03);
+  leftLeg.add(leftThigh, leftShoe);
+  root.add(leftLeg);
+
+  // Right Leg (pivoted at hip)
+  const rightLeg = new THREE.Group();
+  rightLeg.position.set(0.13, 0.7, 0);
+  const rightThigh = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.56, 0.17), pantsM);
+  rightThigh.position.y = -0.28;
+  const rightShoe = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.09, 0.25), shoeM);
+  rightShoe.position.set(0, -0.6, -0.03);
+  rightLeg.add(rightThigh, rightShoe);
+  root.add(rightLeg);
+
   let hpBarBg: THREE.Mesh | undefined;
   let hpBarFill: THREE.Mesh | undefined;
 
   if (opts.showHpBar) {
     hpBarBg = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.95, 0.11),
+      new THREE.PlaneGeometry(0.88, 0.1),
       new THREE.MeshBasicMaterial({ color: 0x09090b, side: THREE.DoubleSide })
     );
-    hpBarBg.position.set(0, 2.65, 0);
+    hpBarBg.position.set(0, 2.15, 0);
     root.add(hpBarBg);
 
     hpBarFill = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.91, 0.075),
+      new THREE.PlaneGeometry(0.84, 0.068),
       new THREE.MeshBasicMaterial({
         color: opts.isCop || opts.isSwat ? 0x38bdf8 : 0xef4444,
         side: THREE.DoubleSide,
       })
     );
-    hpBarFill.position.set(0, 2.65, 0.01);
+    hpBarFill.position.set(0, 2.15, 0.01);
     root.add(hpBarFill);
   }
+
+  root.traverse((o) => {
+    if (o instanceof THREE.Mesh && o !== muzzleFlash && o !== hpBarBg && o !== hpBarFill) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
 
   return {
     root,
@@ -177,160 +215,262 @@ export function createCharacterRig(opts: {
 
 export function updateRigWeaponVisual(rig: CharacterRig, weapon: WeaponId) {
   rig.gunGroup.visible = weapon !== 'unarmed';
-  const barrel = rig.gunGroup.children[0] as THREE.Mesh | undefined;
-  if (!barrel) return;
   if (weapon === 'pistol') {
-    barrel.scale.set(0.85, 0.85, 0.55);
+    rig.gunGroup.scale.set(0.75, 0.75, 0.55);
   } else if (weapon === 'smg') {
-    barrel.scale.set(0.95, 1.0, 0.78);
+    rig.gunGroup.scale.set(0.9, 0.95, 0.8);
   } else if (weapon === 'shotgun' || weapon === 'rifle') {
-    barrel.scale.set(1.0, 1.0, 1.25);
+    rig.gunGroup.scale.set(1.05, 1.05, 1.25);
   } else if (weapon === 'sniper') {
-    barrel.scale.set(0.95, 1.05, 1.65);
+    rig.gunGroup.scale.set(1.0, 1.15, 1.65);
   } else if (weapon === 'rpg') {
-    barrel.scale.set(1.85, 1.85, 1.8);
+    rig.gunGroup.scale.set(1.75, 1.75, 1.8);
   } else if (weapon === 'minigun') {
-    barrel.scale.set(2.1, 2.0, 1.55);
+    rig.gunGroup.scale.set(2.0, 1.9, 1.5);
   }
 }
 
 export interface VehicleRig {
   root: THREE.Group;
   bodyMat: THREE.MeshStandardMaterial;
-  wheels: THREE.Mesh[];
-  sirenLeft?: THREE.Mesh;
-  sirenRight?: THREE.Mesh;
+  wheels: THREE.Group[];
+  copRed?: THREE.Mesh;
+  copBlue?: THREE.Mesh;
   smokeGroup: THREE.Group;
 }
 
+/**
+ * Creates a detailed 3D car facing -Z at rotation.y = 0.
+ */
 export function createVehicleMesh(opts: {
   color: number;
-  kind: 'sport' | 'sedan' | 'suv' | 'police' | 'swat';
+  kind: 'sport' | 'sedan' | 'suv' | 'police' | 'swat' | 'taxi' | 'cash_truck';
 }): VehicleRig {
-  const root = new THREE.Group();
+  const g = new THREE.Group();
+  g.rotation.order = 'YXZ';
+
+  const baseColor =
+    opts.kind === 'police'
+      ? 0xe8eaee
+      : opts.kind === 'swat'
+        ? 0x18181b
+        : opts.kind === 'taxi'
+          ? 0xfacc15
+          : opts.kind === 'cash_truck'
+            ? 0xd97706
+            : opts.color;
 
   const bodyMat = new THREE.MeshStandardMaterial({
-    color: opts.kind === 'police' ? 0x0f172a : opts.kind === 'swat' ? 0x18181b : opts.color,
-    metalness: 0.62,
-    roughness: 0.28,
+    color: baseColor,
+    roughness: 0.32,
+    metalness: 0.36,
   });
+  const darkMat = new THREE.MeshStandardMaterial({
+    color: 0x141418,
+    roughness: 0.48,
+    metalness: 0.22,
+  });
+  const chromeMat = new THREE.MeshStandardMaterial({
+    color: 0xcbd5e1,
+    roughness: 0.24,
+    metalness: 0.78,
+  });
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x6a90a4,
+    roughness: 0.12,
+    metalness: 0.45,
+    transparent: true,
+    opacity: 0.52,
+  });
+  const headLightMat = new THREE.MeshStandardMaterial({
+    color: 0xfff2c8,
+    emissive: 0xffe08a,
+    emissiveIntensity: 1.1,
+  });
+  const tailLightMat = new THREE.MeshStandardMaterial({
+    color: 0xdc2626,
+    emissive: 0x991b1b,
+    emissiveIntensity: 0.65,
+  });
+  const rubberMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.85 });
 
-  const width = opts.kind === 'swat' ? 2.55 : opts.kind === 'suv' ? 2.35 : 2.2;
-  const length = opts.kind === 'swat' ? 5.6 : opts.kind === 'sport' ? 4.75 : 4.9;
-  const chassisH = opts.kind === 'swat' ? 1.35 : opts.kind === 'sport' ? 0.72 : 0.86;
+  const isHeavy = opts.kind === 'swat' || opts.kind === 'cash_truck';
+  const bodyH = isHeavy ? 0.96 : opts.kind === 'sport' ? 0.42 : 0.52;
+  const bodyL = isHeavy ? 4.85 : opts.kind === 'sport' ? 4.25 : 4.35;
+  const bodyW = isHeavy ? 2.08 : opts.kind === 'sport' ? 1.96 : 1.88;
+  const cabinH = isHeavy ? 0.82 : 0.52;
+  const cabinL = opts.kind === 'sport' ? 1.48 : isHeavy ? 2.45 : 1.82;
 
-  // Lower chassis
   const chassis = new THREE.Mesh(
-    new THREE.BoxGeometry(width, chassisH, length),
+    new THREE.BoxGeometry(bodyW - 0.16, 0.16, bodyL * 0.9),
+    darkMat
+  );
+  chassis.position.y = 0.26;
+  g.add(chassis);
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(bodyW, bodyH, bodyL), bodyMat);
+  body.position.y = 0.52;
+  g.add(body);
+
+  const skirt = new THREE.Mesh(
+    new THREE.BoxGeometry(bodyW + 0.06, 0.12, bodyL * 0.74),
+    darkMat
+  );
+  skirt.position.y = 0.34;
+  g.add(skirt);
+
+  const hood = new THREE.Mesh(
+    new THREE.BoxGeometry(bodyW - 0.18, 0.07, bodyL * 0.28),
     bodyMat
   );
-  chassis.position.y = 0.42 + chassisH * 0.5;
-  chassis.castShadow = true;
-  chassis.receiveShadow = true;
-  root.add(chassis);
+  hood.position.set(0, 0.52 + bodyH * 0.5 + 0.02, -bodyL * 0.28);
+  g.add(hood);
 
-  // White police doors or racing stripes
-  if (opts.kind === 'police') {
-    const whiteDoor = new THREE.Mesh(
-      new THREE.BoxGeometry(width + 0.03, chassisH * 0.88, length * 0.44),
-      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.35 })
-    );
-    whiteDoor.position.set(0, chassis.position.y, 0);
-    root.add(whiteDoor);
-  } else if (opts.kind === 'sport') {
-    const stripe = new THREE.Mesh(
-      new THREE.BoxGeometry(0.42, 0.04, length * 0.96),
-      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.2 })
-    );
-    stripe.position.set(0, chassis.position.y + chassisH * 0.5 + 0.01, 0);
-    root.add(stripe);
+  // Front (-Z) and Rear (+Z) Bumpers
+  const fBumper = new THREE.Mesh(new THREE.BoxGeometry(bodyW + 0.05, 0.22, 0.2), darkMat);
+  fBumper.position.set(0, 0.36, -bodyL / 2 + 0.02);
+  g.add(fBumper);
+
+  const rBumper = new THREE.Mesh(new THREE.BoxGeometry(bodyW + 0.05, 0.22, 0.2), darkMat);
+  rBumper.position.set(0, 0.36, bodyL / 2 - 0.02);
+  g.add(rBumper);
+
+  // Glass Cabin & Roof
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(bodyW - 0.22, cabinH, cabinL), glassMat);
+  cabin.position.set(0, 0.52 + bodyH * 0.55 + cabinH / 2, opts.kind === 'sport' ? 0.18 : 0.12);
+  g.add(cabin);
+
+  const roof = new THREE.Mesh(
+    new THREE.BoxGeometry(bodyW - 0.32, 0.06, cabinL * 0.82),
+    bodyMat
+  );
+  roof.position.set(0, cabin.position.y + cabinH / 2, cabin.position.z);
+  g.add(roof);
+
+  // Sloped Windshields
+  const wind = new THREE.Mesh(new THREE.BoxGeometry(bodyW - 0.3, 0.4, 0.05), glassMat);
+  wind.position.set(0, 0.94, cabin.position.z - cabinL * 0.42);
+  wind.rotation.x = -0.48;
+  g.add(wind);
+
+  const rearGlass = new THREE.Mesh(new THREE.BoxGeometry(bodyW - 0.34, 0.34, 0.04), glassMat);
+  rearGlass.position.set(0, 0.94, cabin.position.z + cabinL * 0.42);
+  rearGlass.rotation.x = 0.4;
+  g.add(rearGlass);
+
+  // Side Mirrors
+  for (const x of [-bodyW * 0.52, bodyW * 0.52]) {
+    const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.2), darkMat);
+    mirror.position.set(x, 0.92, -0.14);
+    g.add(mirror);
   }
 
-  // Cabin
-  const cabinH = opts.kind === 'swat' ? 0.95 : opts.kind === 'sport' ? 0.56 : 0.72;
-  const cabinL = opts.kind === 'swat' ? length * 0.78 : length * 0.52;
-  const cabinMat = new THREE.MeshStandardMaterial({
-    color: 0x09090b,
-    metalness: 0.85,
-    roughness: 0.15,
-  });
-  const cabin = new THREE.Mesh(
-    new THREE.BoxGeometry(width * 0.86, cabinH, cabinL),
-    cabinMat
-  );
-  cabin.position.set(0, chassis.position.y + chassisH * 0.5 + cabinH * 0.5 - 0.04, -0.2);
-  cabin.castShadow = true;
-  root.add(cabin);
+  // Sport Spoiler
+  if (opts.kind === 'sport') {
+    const spoiler = new THREE.Mesh(new THREE.BoxGeometry(bodyW - 0.26, 0.07, 0.32), bodyMat);
+    spoiler.position.set(0, 1.1, bodyL * 0.38);
+    g.add(spoiler);
+    for (const sx of [-0.5, 0.5]) {
+      const stem = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.06), darkMat);
+      stem.position.set(sx, 0.98, bodyL * 0.36);
+      g.add(stem);
+    }
+  }
 
-  // Headlights (+Z front)
-  const headLightMat = new THREE.MeshBasicMaterial({ color: 0xfef9c3 });
-  [-width * 0.34, width * 0.34].forEach((lx) => {
-    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.18, 0.08), headLightMat);
-    hl.position.set(lx, 0.74, length * 0.5 + 0.01);
-    root.add(hl);
-  });
-
-  // Taillights (-Z rear)
-  const tailLightMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
-  [-width * 0.34, width * 0.34].forEach((lx) => {
-    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.18, 0.08), tailLightMat);
-    tl.position.set(lx, 0.76, -length * 0.5 - 0.01);
-    root.add(tl);
-  });
-
-  // Police / SWAT Siren Lightbar
-  let sirenLeft: THREE.Mesh | undefined;
-  let sirenRight: THREE.Mesh | undefined;
+  // Police / SWAT Lightbar & Stripes
+  let copRed: THREE.Mesh | undefined;
+  let copBlue: THREE.Mesh | undefined;
   if (opts.kind === 'police' || opts.kind === 'swat') {
-    const sirenY = cabin.position.y + cabinH * 0.5 + 0.1;
-    sirenLeft = new THREE.Mesh(
-      new THREE.BoxGeometry(0.55, 0.16, 0.26),
-      new THREE.MeshBasicMaterial({ color: 0xef4444 })
-    );
-    sirenLeft.position.set(-0.32, sirenY, 0.1);
-    root.add(sirenLeft);
+    const topY = cabin.position.y + cabinH / 2 + 0.08;
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.12, 0.28), darkMat);
+    bar.position.set(0, topY, 0.08);
+    g.add(bar);
 
-    sirenRight = new THREE.Mesh(
-      new THREE.BoxGeometry(0.55, 0.16, 0.26),
-      new THREE.MeshBasicMaterial({ color: 0x3b82f6 })
+    copRed = new THREE.Mesh(
+      new THREE.BoxGeometry(0.32, 0.12, 0.24),
+      new THREE.MeshStandardMaterial({
+        color: 0xff2a2a,
+        emissive: 0xff2222,
+        emissiveIntensity: 1.5,
+      })
     );
-    sirenRight.position.set(0.32, sirenY, 0.1);
-    root.add(sirenRight);
+    copRed.position.set(-0.22, topY + 0.08, 0.08);
+    g.add(copRed);
+
+    copBlue = new THREE.Mesh(
+      new THREE.BoxGeometry(0.32, 0.12, 0.24),
+      new THREE.MeshStandardMaterial({
+        color: 0x2266ff,
+        emissive: 0x2266ff,
+        emissiveIntensity: 1.5,
+      })
+    );
+    copBlue.position.set(0.22, topY + 0.08, 0.08);
+    g.add(copBlue);
+
+    if (opts.kind === 'police') {
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(bodyW + 0.04, 0.14, 2.3),
+        new THREE.MeshStandardMaterial({ color: 0x1d4ed8 })
+      );
+      stripe.position.set(0, 0.62, 0);
+      g.add(stripe);
+    }
   }
 
-  // Wheels
-  const wheels: THREE.Mesh[] = [];
-  const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.32, 14);
-  wheelGeo.rotateZ(Math.PI / 2);
-  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.85 });
+  // Headlights (-Z) & Taillights (+Z)
+  for (const sx of [-0.56, 0.56]) {
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.13, 0.08), headLightMat);
+    hl.position.set(sx, 0.52, -bodyL / 2 + 0.02);
+    g.add(hl);
 
-  const wheelPositions: [number, number, number][] = [
-    [-width * 0.5, 0.42, length * 0.31],
-    [width * 0.5, 0.42, length * 0.31],
-    [-width * 0.5, 0.42, -length * 0.31],
-    [width * 0.5, 0.42, -length * 0.31],
-  ];
-
-  for (const [wx, wy, wz] of wheelPositions) {
-    const w = new THREE.Mesh(wheelGeo, wheelMat);
-    w.position.set(wx, wy, wz);
-    w.castShadow = true;
-    root.add(w);
-    wheels.push(w);
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.11, 0.06), tailLightMat);
+    tl.position.set(sx, 0.54, bodyL / 2 - 0.02);
+    g.add(tl);
   }
 
-  // Smoke emitter holder when damaged
+  // 4 Wheels with Tires + Metallic Rims
+  const wheels: THREE.Group[] = [];
+  const wheelY = isHeavy ? 0.36 : 0.32;
+  for (const wz of [-bodyL * 0.33, bodyL * 0.33]) {
+    for (const wx of [-bodyW * 0.43, bodyW * 0.43]) {
+      const wh = new THREE.Group();
+      const tire = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.34, 0.34, 0.24, 14),
+        rubberMat
+      );
+      tire.rotation.z = Math.PI / 2;
+      const rim = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.2, 0.2, 0.26, 10),
+        chromeMat
+      );
+      rim.rotation.z = Math.PI / 2;
+      wh.add(tire, rim);
+      wh.position.set(wx, wheelY, wz);
+      g.add(wh);
+      wheels.push(wh);
+    }
+  }
+
+  // Smoke Group for vehicle damage
   const smokeGroup = new THREE.Group();
-  smokeGroup.position.set(0, 1.1, length * 0.35);
-  const smokePuff = new THREE.Mesh(
-    new THREE.SphereGeometry(0.65, 8, 8),
-    new THREE.MeshBasicMaterial({ color: 0x27272a, transparent: true, opacity: 0.65 })
+  smokeGroup.position.set(0, 0.95, -bodyL * 0.35);
+  const puff = new THREE.Mesh(
+    new THREE.SphereGeometry(0.55, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0x27272a, transparent: true, opacity: 0.68 })
   );
-  smokeGroup.add(smokePuff);
+  smokeGroup.add(puff);
   smokeGroup.visible = false;
-  root.add(smokeGroup);
+  g.add(smokeGroup);
 
-  return { root, bodyMat, wheels, sirenLeft, sirenRight, smokeGroup };
+  g.traverse((o) => {
+    if (o instanceof THREE.Mesh && o !== puff) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+
+  return { root: g, bodyMat, wheels, copRed, copBlue, smokeGroup };
 }
 
 export interface HelicopterRig {
@@ -338,7 +478,6 @@ export interface HelicopterRig {
   mainRotor: THREE.Group;
   tailRotor: THREE.Mesh;
   searchlight: THREE.Mesh;
-  sirenMesh: THREE.Mesh;
 }
 
 export function createPoliceHelicopterMesh(): HelicopterRig {
@@ -352,108 +491,185 @@ export function createPoliceHelicopterMesh(): HelicopterRig {
   const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4 });
   const glassMat = new THREE.MeshStandardMaterial({
     color: 0x38bdf8,
-    metalness: 0.9,
-    roughness: 0.1,
+    metalness: 0.85,
+    roughness: 0.15,
     transparent: true,
     opacity: 0.72,
   });
 
-  // Cabin fuselage
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.9, 4.4), bodyMat);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.3, 1.85, 4.3), bodyMat);
   root.add(cabin);
 
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.46, 0.45, 3.8), whiteMat);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.36, 0.42, 3.7), whiteMat);
   stripe.position.set(0, -0.1, 0);
   root.add(stripe);
 
-  const cockpit = new THREE.Mesh(new THREE.BoxGeometry(2.15, 1.3, 1.7), glassMat);
-  cockpit.position.set(0, 0.1, 1.85);
+  const cockpit = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.25, 1.65), glassMat);
+  cockpit.position.set(0, 0.1, -1.85);
   root.add(cockpit);
 
-  // Tail boom
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.7, 5.2), bodyMat);
-  tail.position.set(0, 0.25, -4.4);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.65, 5.0), bodyMat);
+  tail.position.set(0, 0.25, 4.3);
   root.add(tail);
 
-  // Landing skids
-  [-1.1, 1.1].forEach((sx) => {
-    const skid = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 4.2), whiteMat);
-    skid.position.set(sx, -1.35, 0.2);
+  [-1.05, 1.05].forEach((sx) => {
+    const skid = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 4.1), whiteMat);
+    skid.position.set(sx, -1.3, -0.2);
     root.add(skid);
   });
 
-  // Main rotor
   const mainRotor = new THREE.Group();
-  mainRotor.position.set(0, 1.18, 0);
+  mainRotor.position.set(0, 1.15, 0);
   const bladeMat = new THREE.MeshBasicMaterial({ color: 0x18181b });
-  const blade1 = new THREE.Mesh(new THREE.BoxGeometry(9.8, 0.06, 0.36), bladeMat);
-  const blade2 = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.06, 9.8), bladeMat);
-  mainRotor.add(blade1, blade2);
+  mainRotor.add(
+    new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.06, 0.34), bladeMat),
+    new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.06, 9.6), bladeMat)
+  );
   root.add(mainRotor);
 
-  // Tail rotor
-  const tailRotor = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.9, 0.24), bladeMat);
-  tailRotor.position.set(0.4, 0.35, -6.8);
+  const tailRotor = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.85, 0.22), bladeMat);
+  tailRotor.position.set(0.38, 0.35, 6.6);
   root.add(tailRotor);
 
-  // Searchlight beam cone pointing down
-  const coneGeo = new THREE.ConeGeometry(8.5, 28, 16, 1, true);
+  const coneGeo = new THREE.ConeGeometry(8.0, 26, 16, 1, true);
   const coneMat = new THREE.MeshBasicMaterial({
     color: 0xfef08a,
     transparent: true,
-    opacity: 0.13,
+    opacity: 0.14,
     side: THREE.DoubleSide,
     depthWrite: false,
   });
   const searchlight = new THREE.Mesh(coneGeo, coneMat);
-  searchlight.position.set(0, -14.8, 2.2);
+  searchlight.position.set(0, -13.8, -1.8);
   root.add(searchlight);
 
-  const sirenMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(0.32, 8, 8),
-    new THREE.MeshBasicMaterial({ color: 0xef4444 })
-  );
-  sirenMesh.position.set(0, -0.98, 1.4);
-  root.add(sirenMesh);
-
-  return { root, mainRotor, tailRotor, searchlight, sirenMesh };
+  return { root, mainRotor, tailRotor, searchlight };
 }
 
-export function createPalmTreeMesh(): THREE.Group {
+export function createTreeMesh(): THREE.Group {
   const g = new THREE.Group();
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9 });
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.38, 7.2, 7), trunkMat);
-  trunk.position.y = 3.6;
-  trunk.castShadow = true;
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.16, 0.24, 1.6, 7),
+    new THREE.MeshStandardMaterial({ color: 0x5a3a24, roughness: 0.9 })
+  );
+  trunk.position.y = 0.8;
   g.add(trunk);
 
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.65 });
-  for (let i = 0; i < 6; i++) {
-    const angle = (i / 6) * Math.PI * 2;
-    const frond = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.14, 2.8), leafMat);
-    frond.position.set(Math.sin(angle) * 1.25, 7.1, Math.cos(angle) * 1.25);
-    frond.rotation.y = angle;
-    frond.rotation.x = 0.38;
-    g.add(frond);
-  }
+  const leafM = new THREE.MeshStandardMaterial({ color: 0x2f7a48, roughness: 0.76 });
+  const leaf1 = new THREE.Mesh(new THREE.ConeGeometry(1.25, 2.1, 8), leafM);
+  leaf1.position.y = 2.2;
+  const leaf2 = new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.5, 8), leafM);
+  leaf2.position.y = 2.95;
+  g.add(leaf1, leaf2);
+  g.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return g;
+}
+
+export function createLampMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const poleM = new THREE.MeshStandardMaterial({
+    color: 0x2a3038,
+    roughness: 0.45,
+    metalness: 0.4,
+  });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 5.2, 6), poleM);
+  pole.position.y = 2.6;
+  g.add(pole);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 1.1), poleM);
+  arm.position.set(0, 5.1, -0.4);
+  g.add(arm);
+  const bulb = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 8, 8),
+    new THREE.MeshStandardMaterial({
+      color: 0xffe6a8,
+      emissive: 0xffc86a,
+      emissiveIntensity: 1.5,
+    })
+  );
+  bulb.position.set(0, 5.0, -0.9);
+  g.add(bulb);
+  return g;
+}
+
+export function createTrafficLightMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.09, 4.2, 6),
+    new THREE.MeshStandardMaterial({ color: 0x22262c, roughness: 0.5, metalness: 0.35 })
+  );
+  pole.position.y = 2.1;
+  g.add(pole);
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(0.28, 0.82, 0.22),
+    new THREE.MeshStandardMaterial({ color: 0x16181c })
+  );
+  box.position.y = 4.15;
+  g.add(box);
+  const mk = (y: number, color: number) => {
+    const m = new THREE.Mesh(
+      new THREE.CircleGeometry(0.08, 10),
+      new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.85 })
+    );
+    m.position.set(0, y, 0.12);
+    g.add(m);
+  };
+  mk(4.4, 0xff3333);
+  mk(4.15, 0xffcc33);
+  mk(3.9, 0x33dd66);
   return g;
 }
 
 export function createExplosiveBarrelMesh(): THREE.Group {
   const g = new THREE.Group();
   const barrel = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.52, 0.52, 1.35, 12),
-    new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4, metalness: 0.3 })
+    new THREE.CylinderGeometry(0.46, 0.46, 1.25, 12),
+    new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.38, metalness: 0.3 })
   );
-  barrel.position.y = 0.68;
+  barrel.position.y = 0.63;
   barrel.castShadow = true;
   g.add(barrel);
 
   const stripe = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.53, 0.53, 0.24, 12),
+    new THREE.CylinderGeometry(0.47, 0.47, 0.22, 12),
     new THREE.MeshBasicMaterial({ color: 0xfacc15 })
   );
-  stripe.position.y = 0.72;
+  stripe.position.y = 0.65;
   g.add(stripe);
+  return g;
+}
+
+export function createMissionBeaconMesh(color = 0xfacc15): THREE.Group {
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(2.1, 0.11, 8, 28),
+    new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.8,
+      transparent: true,
+      opacity: 0.92,
+    })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.16;
+  g.add(ring);
+
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.22, 12, 12),
+    new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.65,
+      transparent: true,
+      opacity: 0.35,
+    })
+  );
+  beam.position.y = 6;
+  g.add(beam);
   return g;
 }
