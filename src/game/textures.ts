@@ -126,34 +126,30 @@ export function tilePlaneUVs(
 
 export function createSignTexture(
   title: string,
-  subtitle: string,
   bgColor: string,
   accentColor: string
 ): THREE.CanvasTexture {
-  const key = `sign:${title}:${subtitle}:${bgColor}:${accentColor}`;
+  const key = `sign:${title}:${bgColor}:${accentColor}`;
   const hit = texCache.get(key);
   if (hit) return hit;
 
   const canvas = document.createElement('canvas');
   canvas.width = 512;
-  canvas.height = 160;
+  canvas.height = 128;
   const ctx = canvas.getContext('2d')!;
 
   ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, 512, 160);
+  ctx.fillRect(0, 0, 512, 128);
 
   ctx.strokeStyle = accentColor;
-  ctx.lineWidth = 8;
-  ctx.strokeRect(8, 8, 496, 144);
+  ctx.lineWidth = 6;
+  ctx.strokeRect(6, 6, 500, 116);
 
   ctx.fillStyle = accentColor;
-  ctx.font = '900 44px "Noto Sans TC", sans-serif';
+  ctx.font = '900 38px "Noto Sans TC", "Inter", sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(title, 256, 76);
-
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = '700 20px "Inter", sans-serif';
-  ctx.fillText(subtitle, 256, 122);
+  ctx.textBaseline = 'middle';
+  ctx.fillText(title, 256, 66);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;

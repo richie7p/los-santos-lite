@@ -101,7 +101,20 @@ export interface MissionDef {
 export interface Landmark {
   id: string;
   name: string;
-  type: 'bank' | 'ammu' | 'customs' | 'hospital' | 'pier' | 'tower' | 'villa' | 'police';
+  region: string;
+  description: string;
+  type:
+    | 'bank'
+    | 'ammu'
+    | 'customs'
+    | 'hospital'
+    | 'pier'
+    | 'tower'
+    | 'villa'
+    | 'police'
+    | 'observatory'
+    | 'airfield'
+    | 'airport';
   x: number;
   z: number;
   color: string;
@@ -123,9 +136,22 @@ export interface RadarBlip {
     | 'ammu'
     | 'customs'
     | 'bank'
-    | 'cash_truck';
+    | 'cash_truck'
+    | 'helipad'
+    | 'stunt';
   color: string;
   label?: string;
+}
+
+export interface StuntRamp {
+  id: string;
+  name: string;
+  x: number;
+  z: number;
+  yaw: number;
+  width: number;
+  length: number;
+  height: number;
 }
 
 export interface NpcDialogueProfile {

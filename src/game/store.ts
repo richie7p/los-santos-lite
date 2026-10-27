@@ -44,6 +44,7 @@ export interface GameHUDState {
   reticleBloom: number; // 0..1
   weaponWheelOpen: boolean;
   charWheelOpen: boolean;
+  worldMapOpen: boolean;
   shopModalOpen: 'ammu' | 'customs' | null;
 
   dialogue: {
@@ -54,6 +55,8 @@ export interface GameHUDState {
   } | null;
 
   inVehicle: boolean;
+  isFlyingVehicle: boolean;
+  vehicleAltitude: number;
   vehicleName: string;
   vehicleSpeedKmh: number;
   vehicleHpPercent: number;
@@ -87,6 +90,7 @@ export interface GameHUDState {
   addCash: (delta: number) => void;
   pushPopup: (text: string, color?: string) => void;
   setShopModalOpen: (shop: 'ammu' | 'customs' | null) => void;
+  setWorldMapOpen: (open: boolean) => void;
   closeDialogue: () => void;
   updateHUD: (partial: Partial<GameHUDState>) => void;
 }
@@ -159,16 +163,19 @@ export const useGameStore = create<GameHUDState>((set) => ({
   reticleBloom: 0,
   weaponWheelOpen: false,
   charWheelOpen: false,
+  worldMapOpen: false,
   shopModalOpen: null,
 
   dialogue: null,
 
   inVehicle: false,
+  isFlyingVehicle: false,
+  vehicleAltitude: 0,
   vehicleName: '',
   vehicleSpeedKmh: 0,
   vehicleHpPercent: 100,
 
-  district: '洛聖都中央金融大道 (Downtown Central Ave)',
+  district: '花園銀行摩天核心區 (Downtown Pillbox Hill)',
   interactPrompt: null,
   talkPrompt: null,
 
@@ -203,6 +210,7 @@ export const useGameStore = create<GameHUDState>((set) => ({
       popups: [...s.popups.slice(-4), { id: Date.now() + Math.random(), text, color }],
     })),
   setShopModalOpen: (shopModalOpen) => set({ shopModalOpen }),
+  setWorldMapOpen: (worldMapOpen) => set({ worldMapOpen }),
   closeDialogue: () => set({ dialogue: null }),
   updateHUD: (partial) => set((state) => ({ ...state, ...partial })),
 }));

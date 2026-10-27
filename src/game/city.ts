@@ -1,35 +1,34 @@
 import * as THREE from 'three';
-import { AABB } from './collision';
 import {
-  ASPHALT,
-  blockBounds,
-  CITY,
-  GRID,
-  HALF,
   LANDMARKS,
-  ROAD,
-  roadCoord,
-  SIDEWALK,
+  STUNT_RAMPS,
+  getTerrainHeight,
 } from './data';
 import {
+  createCactusMesh,
   createExplosiveBarrelMesh,
+  createFerrisWheelMesh,
   createLampMesh,
-  createTrafficLightMesh,
+  createPalmTreeMesh,
+  createStuntRampMesh,
   createTreeMesh,
+  createWindTurbineMesh,
 } from './meshes';
 import {
+  WorldTextures,
   createSignTexture,
   scaleFacadeUVs,
   tileBoxUVs,
   tilePlaneUVs,
-  WorldTextures,
 } from './textures';
 
-export interface RoadNode {
-  i: number;
-  j: number;
-  x: number;
-  z: number;
+export interface BoxCollider {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  maxY: number;
+  label?: string;
 }
 
 export interface BarrelEntity {
@@ -40,794 +39,861 @@ export interface BarrelEntity {
   exploded: boolean;
 }
 
-export interface ParkedSpot {
-  name: string;
+export interface RoadNode {
+  id: string;
   x: number;
   z: number;
-  yaw: number;
-  color: number;
-  kind: 'sport' | 'sedan' | 'suv' | 'taxi' | 'swat';
+  neighbors: string[];
+}
+
+export interface AnimatedWorldProp {
+  kind: 'ferris_wheel' | 'wind_turbine' | 'radar' | 'ocean';
+  object: THREE.Object3D;
+  speed: number;
+  baseY?: number;
 }
 
 export interface CityBuildResult {
-  colliders: AABB[];
-  treeColliders: { x: number; z: number; r: number }[];
+  colliders: BoxCollider[];
   barrels: BarrelEntity[];
   shootableMeshes: THREE.Object3D[];
-  nodes: RoadNode[];
-  npcLoops: { x: number; z: number }[][];
-  parkedSpots: ParkedSpot[];
-  policeSpawns: { x: number; z: number; yaw: number }[];
+  roadNodes: Map<string, RoadNode>;
+  animatedProps: AnimatedWorldProp[];
+  applyTextures: (tex: WorldTextures) => void;
 }
 
-type FacadeKind = 'glass' | 'apt' | 'street' | 'industrial' | 'civic';
-
-function mulberry(seed: number) {
-  let s = seed | 0;
-  return () => {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function buildLosSantosCity(
-  scene: THREE.Scene,
-  tex: WorldTextures | null
-): CityBuildResult {
-  const group = new THREE.Group();
-  const colliders: AABB[] = [];
-  const treeColliders: { x: number; z: number; r: number }[] = [];
+export function buildLosSantosCity(scene: THREE.Scene): CityBuildResult {
+  const colliders: BoxCollider[] = [];
   const barrels: BarrelEntity[] = [];
   const shootableMeshes: THREE.Object3D[] = [];
-  const npcLoops: { x: number; z: number }[][] = [];
-  const parkedSpots: ParkedSpot[] = [];
-  const policeSpawns: { x: number; z: number; yaw: number }[] = [];
+  const roadNodes = new Map<string, RoadNode>();
+  const animatedProps: AnimatedWorldProp[] = [];
 
-  const photo = !!tex;
-  const asphaltMat = new THREE.MeshStandardMaterial({
-    map: tex?.asphalt ?? undefined,
-    color: photo ? 0xffffff : 0x3f434a,
-    roughness: 0.94,
-    metalness: 0.02,
-  });
-  const sidewalkMat = new THREE.MeshStandardMaterial({
-    map: tex?.sidewalk ?? undefined,
-    color: photo ? 0xffffff : 0xb8bac0,
-    roughness: 0.88,
-  });
-  const grassMat = new THREE.MeshStandardMaterial({
-    map: tex?.grass ?? undefined,
-    color: photo ? 0xffffff : 0x5c8058,
-    roughness: 0.94,
-  });
-  const roofMat = new THREE.MeshStandardMaterial({
-    map: tex?.roof ?? undefined,
-    color: photo ? 0xffffff : 0x3a4048,
-    roughness: 0.68,
-  });
-  const plinthMat = new THREE.MeshStandardMaterial({
-    color: 0x4a4e54,
-    roughness: 0.86,
-  });
-  const curbMat = new THREE.MeshStandardMaterial({
-    color: 0x8e9096,
-    roughness: 0.85,
-  });
-  const acMat = new THREE.MeshStandardMaterial({
-    color: 0x6a7278,
-    roughness: 0.45,
-    metalness: 0.35,
-  });
+  const roadMeshes: Array<{ mesh: THREE.Mesh; w: number; d: number }> = [];
+  const sidewalkMeshes: Array<{ mesh: THREE.Mesh; w: number; d: number }> = [];
+  const roofMeshes: Array<{ mesh: THREE.Mesh; w: number; d: number }> = [];
+  const facadeMeshes: Array<{
+    mesh: THREE.Mesh;
+    kind: 'glass' | 'apt' | 'street' | 'civic' | 'ind';
+    w: number;
+    h: number;
+    d: number;
+  }> = [];
 
-  const facades: Record<FacadeKind, THREE.MeshStandardMaterial> = {
-    glass: new THREE.MeshStandardMaterial({
-      map: tex?.glass ?? undefined,
-      color: photo ? 0xffffff : 0x8aa0b0,
-      roughness: 0.36,
-      metalness: 0.28,
-    }),
-    apt: new THREE.MeshStandardMaterial({
-      map: tex?.apt ?? undefined,
-      color: photo ? 0xffffff : 0x9a8f84,
-      roughness: 0.62,
-      metalness: 0.06,
-    }),
-    street: new THREE.MeshStandardMaterial({
-      map: tex?.street ?? undefined,
-      color: photo ? 0xffffff : 0x8a9098,
-      roughness: 0.58,
-      metalness: 0.08,
-    }),
-    industrial: new THREE.MeshStandardMaterial({
-      map: tex?.industrial ?? undefined,
-      color: photo ? 0xffffff : 0x7a7068,
-      roughness: 0.7,
-      metalness: 0.12,
-    }),
-    civic: new THREE.MeshStandardMaterial({
-      map: tex?.civic ?? undefined,
-      color: photo ? 0xffffff : 0xd8dce2,
-      roughness: 0.48,
-      metalness: 0.12,
-    }),
-  };
+  let skyMesh: THREE.Mesh | null = null;
 
-  // 1. Photorealistic Sky Dome
-  if (tex?.sky) {
-    const skyMat = new THREE.MeshBasicMaterial({
-      map: tex.sky,
-      side: THREE.BackSide,
-      fog: false,
-      depthWrite: false,
-    });
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(235, 32, 18), skyMat);
-    sky.renderOrder = -10;
-    sky.frustumCulled = false;
-    group.add(sky);
-  }
-
-  // 2. Ground Grass Plane
-  const groundGeo = new THREE.PlaneGeometry(CITY + 90, CITY + 90);
-  tilePlaneUVs(groundGeo, CITY + 90, CITY + 90, 12);
-  const ground = new THREE.Mesh(groundGeo, grassMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(0, -0.02, -8);
-  ground.receiveShadow = true;
-  group.add(ground);
-  shootableMeshes.push(ground);
-
-  // 3. North Bay Water & Seawall
-  const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(CITY + 110, 56),
-    new THREE.MeshStandardMaterial({
-      color: 0x1a4a58,
-      roughness: 0.22,
-      metalness: 0.36,
-      transparent: true,
-      opacity: 0.94,
-    })
-  );
-  water.rotation.x = -Math.PI / 2;
-  water.position.set(0, -0.08, -HALF - 26);
-  group.add(water);
-
-  const seawall = new THREE.Mesh(
-    new THREE.BoxGeometry(CITY + 20, 1.4, 1.2),
-    curbMat
-  );
-  seawall.position.set(0, 0.5, -HALF - 1.2);
-  group.add(seawall);
-  colliders.push({
-    minX: -HALF - 10,
-    maxX: HALF + 10,
-    minZ: -HALF - 2.2,
-    maxZ: -HALF - 0.2,
-  });
-
-  // 4. 5x5 Road Grid + Sidewalks + Lane Markings + Crosswalks
-  const lineM = new THREE.MeshStandardMaterial({
-    color: 0xd8c56a,
-    emissive: 0x3a3410,
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0x262930, roughness: 0.9 });
+  const desertRoadMat = new THREE.MeshStandardMaterial({ color: 0x3f3a34, roughness: 0.92 });
+  const runwayMat = new THREE.MeshStandardMaterial({ color: 0x1e242b, roughness: 0.85 });
+  const swMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.85 });
+  const yellowLineMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 0.25,
     roughness: 0.6,
   });
-  const zebraM = new THREE.MeshStandardMaterial({
-    color: 0xe8eaee,
-    roughness: 0.7,
-  });
+  const whiteLineMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.6 });
 
-  for (let i = 0; i <= GRID; i++) {
-    const x = roadCoord(i);
-    const roadGeo = new THREE.BoxGeometry(ASPHALT, 0.04, CITY);
-    tileBoxUVs(roadGeo, ASPHALT, 0.04, CITY, 8);
-    const road = new THREE.Mesh(roadGeo, asphaltMat);
-    road.position.set(x, 0.01, 0);
-    road.receiveShadow = true;
-    group.add(road);
-    shootableMeshes.push(road);
-
-    for (const side of [-1, 1]) {
-      const swGeo = new THREE.BoxGeometry(SIDEWALK, 0.08, CITY);
-      tileBoxUVs(swGeo, SIDEWALK, 0.08, CITY, 4);
-      const sw = new THREE.Mesh(swGeo, sidewalkMat);
-      sw.position.set(x + side * (ASPHALT / 2 + SIDEWALK / 2), 0.04, 0);
-      sw.receiveShadow = true;
-      group.add(sw);
-    }
-
-    for (let s = -HALF + 6; s < HALF; s += 8) {
-      const dash = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.03, 3.2), lineM);
-      dash.position.set(x, 0.04, s);
-      group.add(dash);
-    }
-  }
-
-  for (let j = 0; j <= GRID; j++) {
-    const z = roadCoord(j);
-    const roadGeo = new THREE.BoxGeometry(CITY, 0.05, ASPHALT);
-    tileBoxUVs(roadGeo, CITY, 0.05, ASPHALT, 8);
-    const road = new THREE.Mesh(roadGeo, asphaltMat);
-    road.position.set(0, 0.015, z);
-    road.receiveShadow = true;
-    group.add(road);
-    shootableMeshes.push(road);
-
-    for (const side of [-1, 1]) {
-      const swGeo = new THREE.BoxGeometry(CITY, 0.09, SIDEWALK);
-      tileBoxUVs(swGeo, CITY, 0.09, SIDEWALK, 4);
-      const sw = new THREE.Mesh(swGeo, sidewalkMat);
-      sw.position.set(0, 0.045, z + side * (ASPHALT / 2 + SIDEWALK / 2));
-      sw.receiveShadow = true;
-      group.add(sw);
-    }
-
-    for (let s = -HALF + 6; s < HALF; s += 8) {
-      const dash = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.03, 0.14), lineM);
-      dash.position.set(s, 0.042, z);
-      group.add(dash);
-    }
-  }
-
-  // Building Constructor Helper
-  const addBuilding = (
+  const addBuildingBox = (
     x: number,
     z: number,
     w: number,
     d: number,
     h: number,
-    seed: number,
-    kind: FacadeKind
+    color: number,
+    kind: 'glass' | 'apt' | 'street' | 'civic' | 'ind' = 'glass',
+    hasCollider = true
   ) => {
+    const baseY = getTerrainHeight(x, z, false);
     const geo = new THREE.BoxGeometry(w, h, d);
     scaleFacadeUVs(geo, w, h, d);
-    const face = facades[kind];
-    const mat: THREE.Material[] = [face, face, roofMat, plinthMat, face, face];
-
+    const mat = new THREE.MeshStandardMaterial({
+      color,
+      roughness: kind === 'glass' ? 0.28 : 0.68,
+      metalness: kind === 'glass' ? 0.42 : 0.12,
+    });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, h / 2, z);
+    mesh.position.set(x, baseY + h / 2, z);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    group.add(mesh);
+    scene.add(mesh);
     shootableMeshes.push(mesh);
+    facadeMeshes.push({ mesh, kind, w, h, d });
 
-    const plinth = new THREE.Mesh(
-      new THREE.BoxGeometry(w + 0.28, 0.82, d + 0.28),
-      plinthMat
-    );
-    plinth.position.set(x, 0.4, z);
-    plinth.castShadow = true;
-    group.add(plinth);
+    // Roof cap
+    const roofGeo = new THREE.BoxGeometry(w - 0.3, 0.25, d - 0.3);
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.82 });
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.position.set(x, baseY + h + 0.12, z);
+    roof.receiveShadow = true;
+    scene.add(roof);
+    roofMeshes.push({ mesh: roof, w: w - 0.3, d: d - 0.3 });
 
-    const ledge = new THREE.Mesh(
-      new THREE.BoxGeometry(w + 0.38, 0.16, d + 0.38),
-      plinthMat
-    );
-    ledge.position.set(x, h - 0.18, z);
-    group.add(ledge);
-
-    const roof = new THREE.Mesh(
-      new THREE.BoxGeometry(w + 0.3, 0.25, d + 0.3),
-      roofMat
-    );
-    roof.position.set(x, h + 0.1, z);
-    group.add(roof);
-
-    const rng = mulberry(seed + 91);
-    const acCount = 1 + Math.floor(rng() * 3);
-    for (let k = 0; k < acCount; k++) {
-      const aw = 1.1 + rng() * 0.6;
-      const ad = 0.85 + rng() * 0.4;
-      const ah = 0.55 + rng() * 0.25;
-      const ac = new THREE.Mesh(new THREE.BoxGeometry(aw, ah, ad), acMat);
-      ac.position.set(
-        x + (rng() - 0.5) * (w * 0.55),
-        h + 0.35 + ah / 2,
-        z + (rng() - 0.5) * (d * 0.55)
-      );
-      ac.castShadow = true;
-      group.add(ac);
+    if (hasCollider) {
+      colliders.push({
+        minX: x - w / 2 - 0.3,
+        maxX: x + w / 2 + 0.3,
+        minZ: z - d / 2 - 0.3,
+        maxZ: z + d / 2 + 0.3,
+        maxY: baseY + h,
+      });
     }
-
-    if (h > 16) {
-      const ant = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.05, 0.07, 2.8, 6),
-        acMat
-      );
-      ant.position.set(x + w * 0.2, h + 1.5, z - d * 0.15);
-      group.add(ant);
-    }
-
-    const pad = 0.18;
-    colliders.push({
-      minX: x - w / 2 - pad,
-      maxX: x + w / 2 + pad,
-      minZ: z - d / 2 - pad,
-      maxZ: z + d / 2 + pad,
-    });
+    return mesh;
   };
 
-  const addBillboard = (
-    x: number,
-    y: number,
-    z: number,
-    title: string,
-    sub: string,
-    bg: string,
-    accent: string,
-    rotY = 0
-  ) => {
-    const signMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(8.2, 2.5),
-      new THREE.MeshBasicMaterial({
-        map: createSignTexture(title, sub, bg, accent),
-        side: THREE.DoubleSide,
-      })
-    );
-    signMesh.position.set(x, y, z);
-    signMesh.rotation.y = rotY;
-    group.add(signMesh);
-  };
-
-  // 5. Populate 5x5 City Blocks
-  for (let i = 0; i < GRID; i++) {
-    for (let j = 0; j < GRID; j++) {
-      const b = blockBounds(i, j);
-      npcLoops.push([
-        { x: b.minX - 1.1, z: b.minZ - 1.1 },
-        { x: b.maxX + 1.1, z: b.minZ - 1.1 },
-        { x: b.maxX + 1.1, z: b.maxZ + 1.1 },
-        { x: b.minX - 1.1, z: b.maxZ + 1.1 },
-      ]);
-
-      // (1, 1) Vinewood Central Park
-      if (i === 1 && j === 1) {
-        const pad = new THREE.Mesh(
-          new THREE.BoxGeometry(b.maxX - b.minX - 1, 0.08, b.maxZ - b.minZ - 1),
-          grassMat
-        );
-        pad.position.set(b.cx, 0.04, b.cz);
-        pad.receiveShadow = true;
-        group.add(pad);
-
-        const path = new THREE.Mesh(
-          new THREE.BoxGeometry(3.4, 0.1, b.maxZ - b.minZ - 2),
-          new THREE.MeshStandardMaterial({ color: 0xc2b8a4, roughness: 0.9 })
-        );
-        path.position.set(b.cx, 0.06, b.cz);
-        group.add(path);
-
-        const treePts = [
-          [b.cx - 8, b.cz - 8],
-          [b.cx + 8, b.cz - 7],
-          [b.cx - 9, b.cz + 6],
-          [b.cx + 7, b.cz + 8],
-          [b.cx - 4, b.cz + 10],
-          [b.cx + 10, b.cz],
-          [b.cx - 11, b.cz],
-          [b.cx + 3, b.cz - 10],
-        ];
-        for (const [tx, tz] of treePts) {
-          const t = createTreeMesh();
-          t.position.set(tx!, 0, tz!);
-          group.add(t);
-          treeColliders.push({ x: tx!, z: tz!, r: 0.7 });
-        }
-        addBillboard(b.cx, 3.4, b.minZ - 1.4, '新生中央公園', 'VINEWOOD CENTRAL PARK', '#1e3a2a', '#4ade80');
-        continue;
-      }
-
-      // (2, 1) Pacific Standard Bank & Maze Bank Skyscraper
-      if (i === 2 && j === 1) {
-        // Pacific Standard Bank (South side of block facing roadCoord(2))
-        addBuilding(b.cx, b.cz + 6, 24, 14, 15, 201, 'civic');
-        const pillarMat = new THREE.MeshStandardMaterial({
-          color: 0xeab308,
-          metalness: 0.65,
-          roughness: 0.25,
-        });
-        for (const px of [b.cx - 8, b.cx - 3, b.cx + 3, b.cx + 8]) {
-          const col = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.45, 0.45, 8.5, 10),
-            pillarMat
-          );
-          col.position.set(px, 4.25, b.maxZ - 1.8);
-          group.add(col);
-        }
-        addBillboard(
-          b.cx,
-          10.5,
-          b.maxZ - 1.2,
-          '太平洋標準銀行',
-          'PACIFIC STANDARD BANK · HEIST TARGET',
-          '#18181b',
-          '#facc15'
-        );
-
-        // Maze Bank Skyscraper (North side of block)
-        addBuilding(b.cx, b.cz - 9, 18, 12, 42, 202, 'glass');
-        const crown = new THREE.Mesh(
-          new THREE.CylinderGeometry(6.5, 7.5, 4.2, 16),
-          new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x7f1d1d })
-        );
-        crown.position.set(b.cx, 44.2, b.cz - 9);
-        group.add(crown);
-        continue;
-      }
-
-      // (2, 2) Central Grand Station
-      if (i === 2 && j === 2) {
-        addBuilding(b.cx, b.cz + 2, 26, 14, 11, 90, 'civic');
-        const canopy = new THREE.Mesh(
-          new THREE.BoxGeometry(20, 0.38, 8),
-          new THREE.MeshStandardMaterial({
-            color: 0xc5cdd8,
-            metalness: 0.35,
-            roughness: 0.4,
-          })
-        );
-        canopy.position.set(b.cx, 5.2, b.minZ + 6);
-        group.add(canopy);
-        addBillboard(
-          b.cx,
-          7.6,
-          b.minZ + 1.6,
-          '洛聖都中央車站',
-          'LOS SANTOS GRAND STATION',
-          '#1a2838',
-          '#38bdf8'
-        );
-        continue;
-      }
-
-      // (3, 2) Ammu-Nation Gun Shop & East Commercial
-      if (i === 3 && j === 2) {
-        addBuilding(b.cx - 6, b.cz + 5, 14, 16, 20, 301, 'glass');
-        addBuilding(b.cx + 6, b.minZ + 7, 13, 10, 8, 302, 'street');
-        addBillboard(
-          b.cx + 6,
-          9.4,
-          b.minZ + 1.8,
-          '武裝國度軍火店',
-          'AMMU-NATION · WEAPONS & ARMOR',
-          '#450a0a',
-          '#f87171'
-        );
-        continue;
-      }
-
-      // (4, 2) Los Santos Customs Garage
-      if (i === 4 && j === 2) {
-        addBuilding(b.cx, b.minZ + 9, 22, 14, 9.5, 401, 'industrial');
-        addBuilding(b.cx, b.cz + 9, 20, 11, 18, 402, 'glass');
-        addBillboard(
-          b.cx,
-          11.0,
-          b.minZ + 1.8,
-          '洛聖都改車王',
-          'LOS SANTOS CUSTOMS · CLEAR WANTED',
-          '#2e1065',
-          '#c084fc'
-        );
-        continue;
-      }
-
-      // (4, 3) Harbor Supercar Parking Lot
-      if (i === 4 && j === 3) {
-        const lotGeo = new THREE.BoxGeometry(
-          b.maxX - b.minX - 1.2,
-          0.06,
-          b.maxZ - b.minZ - 1.2
-        );
-        tileBoxUVs(lotGeo, b.maxX - b.minX, 0.06, b.maxZ - b.minZ, 8);
-        const lot = new THREE.Mesh(lotGeo, asphaltMat);
-        lot.position.set(b.cx, 0.03, b.cz);
-        lot.receiveShadow = true;
-        group.add(lot);
-
-        const stallMat = new THREE.MeshStandardMaterial({
-          color: 0xd0d4da,
-          roughness: 0.7,
-        });
-        const carColors = [0xc45c4a, 0x3a6ea8, 0x22c55e, 0xa855f7, 0xeab308, 0x38bdf8];
-        let n = 0;
-        for (let row = 0; row < 3; row++) {
-          for (let col = 0; col < 3; col++) {
-            const x = b.minX + 6 + col * 8;
-            const z = b.minZ + 6 + row * 8;
-            const line = new THREE.Mesh(
-              new THREE.BoxGeometry(2.4, 0.04, 4.6),
-              stallMat
-            );
-            line.position.set(x, 0.06, z);
-            group.add(line);
-            if (n < 5) {
-              parkedSpots.push({
-                name: n % 2 === 0 ? '佩嘉西 桑托勞超跑 (Zentorno)' : '威皮 霸王跑車 (Dominator)',
-                x,
-                z,
-                yaw: 0,
-                color: carColors[n % carColors.length]!,
-                kind: n % 2 === 0 ? 'sport' : 'sedan',
-              });
-              n++;
-            }
-          }
-        }
-        addBillboard(
-          b.cx,
-          3.5,
-          b.minZ - 1.4,
-          '港灣超跑停車場',
-          'HARBOR EXOTIC CAR LOT',
-          '#172554',
-          '#38bdf8'
-        );
-        continue;
-      }
-
-      // (2, 4) LSPD Police Headquarters
-      if (i === 2 && j === 4) {
-        addBuilding(b.cx, b.cz - 2, 22, 16, 13, 501, 'civic');
-        addBillboard(
-          b.cx,
-          9.2,
-          b.cz - 10.2,
-          '城南警察總局',
-          'LSPD HEADQUARTERS · MISSION ROW',
-          '#102038',
-          '#60a5fa'
-        );
-        policeSpawns.push(
-          { x: b.cx - 6, z: b.maxZ - 4, yaw: Math.PI },
-          { x: b.cx, z: b.maxZ - 4, yaw: Math.PI },
-          { x: b.cx + 6, z: b.maxZ - 4, yaw: Math.PI },
-          { x: b.minX + 4, z: b.cz + 9, yaw: Math.PI / 2 }
-        );
-        continue;
-      }
-
-      // (0, *) West Industrial Port & Oil Refinery
-      if (i === 0) {
-        addBuilding(b.cx - 7, b.cz, 14, 22, 9, i * 17 + j * 9, 'industrial');
-        addBuilding(b.cx + 8, b.cz - 5, 11, 14, 7, i * 17 + j * 9 + 3, 'industrial');
-        const tank = new THREE.Mesh(
-          new THREE.CylinderGeometry(2.6, 2.6, 5.5, 12),
-          new THREE.MeshStandardMaterial({
-            color: 0x8a7a68,
-            roughness: 0.5,
-            metalness: 0.35,
-          })
-        );
-        tank.position.set(b.cx + 8, 2.75, b.cz + 10);
-        tank.castShadow = true;
-        group.add(tank);
-        shootableMeshes.push(tank);
-        colliders.push({
-          minX: tank.position.x - 2.8,
-          maxX: tank.position.x + 2.8,
-          minZ: tank.position.z - 2.8,
-          maxZ: tank.position.z + 2.8,
-        });
-        if (j === 2) {
-          addBillboard(
-            b.maxX + 1.2,
-            4.2,
-            b.cz,
-            '西港重工業與軍火區',
-            'WEST INDUSTRIAL PORT',
-            '#431407',
-            '#fb923c',
-            Math.PI / 2
-          );
-        }
-        continue;
-      }
-
-      // (*, 0) Bayfront Commercial Blocks
-      if (j === 0) {
-        addBuilding(b.cx, b.cz + 4, 22, 15, 13, i * 13 + j, 'glass');
-        addBuilding(b.cx - 8, b.cz - 8, 10, 10, 8, i * 13 + j + 2, 'street');
-        continue;
-      }
-
-      // Generic Commercial & Residential Blocks
-      const seed = i * 31 + j * 17;
-      const rng = mulberry(seed);
-      const inset = 2.2;
-      const ox = b.minX + inset;
-      const oz = b.minZ + inset;
-      const w = b.maxX - b.minX - inset * 2;
-      const d = b.maxZ - b.minZ - inset * 2;
-      const gap = 2.4;
-      const bw = (w - gap) / 2;
-      const bd = (d - gap) / 2;
-      const isComm = i >= 2;
-      for (let c = 0; c < 2; c++) {
-        for (let r = 0; r < 2; r++) {
-          const h = isComm ? 14 + rng() * 16 : 9 + rng() * 11;
-          const kind: FacadeKind = isComm
-            ? rng() > 0.42
-              ? 'glass'
-              : 'street'
-            : rng() > 0.45
-              ? 'apt'
-              : 'street';
-          addBuilding(
-            ox + bw * c + bw / 2 + (c === 1 ? gap : 0),
-            oz + bd * r + bd / 2 + (r === 1 ? gap : 0),
-            bw * (0.86 + rng() * 0.1),
-            bd * (0.86 + rng() * 0.1),
-            h,
-            seed + c * 10 + r,
-            kind
-          );
-        }
-      }
-    }
-  }
-
-  // 6. Street Lamps, Traffic Lights & Crosswalks
-  for (let i = 0; i <= GRID; i++) {
-    for (let j = 0; j <= GRID; j++) {
-      if (i < GRID) {
-        const x = (roadCoord(i) + roadCoord(i + 1)) / 2;
-        const z = roadCoord(j);
-        const l1 = createLampMesh();
-        l1.position.set(x, 0, z - ASPHALT / 2 - 0.6);
-        l1.rotation.y = Math.PI;
-        group.add(l1);
-
-        const l2 = createLampMesh();
-        l2.position.set(x, 0, z + ASPHALT / 2 + 0.6);
-        group.add(l2);
-      }
-
-      if ((i + j) % 2 === 0) {
-        const rx = roadCoord(i);
-        const rz = roadCoord(j);
-        const tl = createTrafficLightMesh();
-        tl.position.set(rx + 3.4, 0, rz + 3.4);
-        group.add(tl);
-
-        // Zebra Crosswalks
-        for (const dir of [0, 1] as const) {
-          for (const sign of [-1, 1]) {
-            for (let k = 0; k < 5; k++) {
-              const stripe = new THREE.Mesh(
-                dir === 0
-                  ? new THREE.BoxGeometry(0.42, 0.035, 2.6)
-                  : new THREE.BoxGeometry(2.6, 0.035, 0.42),
-                zebraM
-              );
-              const off = (k - 2) * 0.7;
-              if (dir === 0) {
-                stripe.position.set(rx + sign * (ASPHALT / 2 + 0.2), 0.045, rz + off);
-              } else {
-                stripe.position.set(rx + off, 0.045, rz + sign * (ASPHALT / 2 + 0.2));
-              }
-              group.add(stripe);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // 7. Hero Vehicles & Curbside Parked Vehicles
-  parkedSpots.unshift(
-    {
-      name: '布拉瓦多 女妖 GT 雙門超跑 (Banshee GT)',
-      x: roadCoord(3) + 3.6,
-      z: 18,
-      yaw: 0,
-      color: 0x2ec4b6,
-      kind: 'sport',
-    },
-    {
-      name: '奧北 密探豪華轎車 (Obey Tailgater)',
-      x: roadCoord(2) + 3.6,
-      z: -18,
-      yaw: 0,
-      color: 0x1e293b,
-      kind: 'sedan',
-    },
-    {
-      name: '佩嘉西 烈焰超跑 (Pegassi Vacca)',
-      x: roadCoord(4) - 3.6,
-      z: 8,
-      yaw: Math.PI,
-      color: 0x22c55e,
-      kind: 'sport',
-    },
-    {
-      name: '卡尼斯 菩提軍用越野皮卡 (Canis Bodhi)',
-      x: roadCoord(1) + 3.6,
-      z: 14,
-      yaw: 0,
-      color: 0xd97706,
-      kind: 'suv',
-    },
-    {
-      name: 'NOOSE 戰術防暴裝甲車 (Riot Van)',
-      x: blockBounds(2, 1).cx - 9,
-      z: roadCoord(2) - 3.6,
-      yaw: Math.PI / 2,
-      color: 0x18181b,
-      kind: 'swat',
-    }
-  );
-
-  // 8. Explosive Red Barrels around Banks, Port & Intersections
-  const barrelCoords: [number, number][] = [
-    [blockBounds(2, 1).cx - 5, blockBounds(2, 1).maxZ - 0.8],
-    [blockBounds(2, 1).cx + 5, blockBounds(2, 1).maxZ - 0.8],
-    [blockBounds(0, 2).cx + 4, blockBounds(0, 2).cz - 5],
-    [blockBounds(0, 2).cx + 6, blockBounds(0, 2).cz + 4],
-    [blockBounds(0, 2).cx + 12, blockBounds(0, 2).cz],
-    [blockBounds(4, 3).cx - 5, blockBounds(4, 3).cz - 4],
-    [roadCoord(3) + 5, 8],
-    [roadCoord(2) - 5, -12],
-    [blockBounds(3, 2).cx + 2, blockBounds(3, 2).minZ - 1.5],
-  ];
-
-  barrelCoords.forEach(([bx, bz], idx) => {
+  let barrelSeq = 0;
+  const addBarrel = (x: number, z: number) => {
+    const id = `barrel_${barrelSeq++}`;
     const mesh = createExplosiveBarrelMesh();
-    mesh.position.set(bx, 0, bz);
-    group.add(mesh);
+    const y = getTerrainHeight(x, z, false);
+    mesh.position.set(x, y, z);
+    scene.add(mesh);
     shootableMeshes.push(mesh);
-    barrels.push({
-      id: `barrel_${idx}`,
-      mesh,
-      x: bx,
-      z: bz,
-      exploded: false,
-    });
+    barrels.push({ id, mesh, x, z, exploded: false });
+  };
+
+  // ============================================================================
+  // 1. SKY DOME & GOLDEN HOUR CALIFORNIA SUN
+  // ============================================================================
+  const skyGeo = new THREE.SphereGeometry(520, 32, 20);
+  const skyMat = new THREE.MeshBasicMaterial({
+    color: 0xffd2a6,
+    side: THREE.BackSide,
+     fog: false,
+  });
+  skyMesh = new THREE.Mesh(skyGeo, skyMat);
+  skyMesh.position.y = 20;
+  scene.add(skyMesh);
+
+  // Glowing sunset sun disc over the western Pacific Ocean
+  const sunDisc = new THREE.Mesh(
+    new THREE.SphereGeometry(26, 24, 24),
+    new THREE.MeshBasicMaterial({ color: 0xffedd5, fog: false })
+  );
+  sunDisc.position.set(-380, 145, -80);
+  scene.add(sunDisc);
+
+  // ============================================================================
+  // 2. 3D DISPLACED MULTI-BIOME ISLAND TERRAIN MESH
+  // ============================================================================
+  const terrainSize = 640;
+  const terrainSegs = 140;
+  const terrainGeo = new THREE.PlaneGeometry(terrainSize, terrainSize, terrainSegs, terrainSegs);
+  terrainGeo.rotateX(-Math.PI / 2);
+
+  const posAttr = terrainGeo.attributes.position as THREE.BufferAttribute;
+  const colors = new Float32Array(posAttr.count * 3);
+  const c = new THREE.Color();
+
+  for (let i = 0; i < posAttr.count; i++) {
+    const vx = posAttr.getX(i);
+    const vz = posAttr.getZ(i);
+    const vy = getTerrainHeight(vx, vz, false);
+    posAttr.setY(i, vy);
+
+    // Biome Vertex Coloring
+    if (vy < -1.15) {
+      // Shallow ocean sandbed
+      c.setHex(0x0e7490);
+    } else if (vx < -104 && vz > -45 && vz < 195) {
+      // Vespucci Golden Sandy Beach
+      c.setHex(vy < -0.2 ? 0xeab308 : 0xfde047);
+    } else if (vz < -72 && vx >= -135 && vx <= 110) {
+      // Vinewood Hills & Observatory Mountain Slopes
+      if (vy > 21) {
+        c.setHex(0x4d7c0f); // Summit plateau lawn
+      } else if (vy > 8) {
+        c.setHex(0x65a30d); // Lush chaparral hillside
+      } else {
+        c.setHex(0x3f6212);
+      }
+    } else if (vx > 96 && vz < 92) {
+      // Sandy Shores Red Rock Mojave Desert
+      const isRunway = vx >= 156 && vx <= 190 && vz >= -138 && vz <= 28;
+      if (isRunway) {
+        c.setHex(0x57534e); // Desert airfield packed dirt/tarmac
+      } else if (vy > 3.5) {
+        c.setHex(0xb45309); // Elevated desert red rock
+      } else {
+        c.setHex(0xd97706); // Golden-red desert sand
+      }
+    } else if (vz > 98 && vx > -95) {
+      // LSIA International Airport Concrete Peninsula
+      c.setHex(0x334155);
+    } else {
+      // Downtown & Central Los Santos Urban Turf
+      c.setHex(0x166534);
+    }
+
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+
+  terrainGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  terrainGeo.computeVertexNormals();
+
+  const terrainMat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.92,
+    metalness: 0.04,
+  });
+  const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
+  terrainMesh.receiveShadow = true;
+  scene.add(terrainMesh);
+  shootableMeshes.push(terrainMesh);
+
+  // ============================================================================
+  // 3. PACIFIC OCEAN WATER & SURF FOAM (WEST & SOUTH COASTS)
+  // ============================================================================
+  const oceanMat = new THREE.MeshStandardMaterial({
+    color: 0x0284c7,
+    roughness: 0.18,
+    metalness: 0.55,
+    transparent: true,
+    opacity: 0.86,
+  });
+  const westOcean = new THREE.Mesh(new THREE.PlaneGeometry(260, 680), oceanMat);
+  westOcean.rotation.x = -Math.PI / 2;
+  westOcean.position.set(-290, -1.32, 0);
+  scene.add(westOcean);
+  animatedProps.push({ kind: 'ocean', object: westOcean, speed: 1.2, baseY: -1.32 });
+
+  const southOcean = new THREE.Mesh(new THREE.PlaneGeometry(680, 180), oceanMat);
+  southOcean.rotation.x = -Math.PI / 2;
+  southOcean.position.set(20, -1.32, 295);
+  scene.add(southOcean);
+
+  // White surf foam strip along Vespucci Beach shoreline
+  const surfFoam = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.2, 340),
+    new THREE.MeshBasicMaterial({ color: 0xe0f2fe, transparent: true, opacity: 0.65 })
+  );
+  surfFoam.rotation.x = -Math.PI / 2;
+  surfFoam.position.set(-164, -1.18, 25);
+  scene.add(surfFoam);
+
+  // ============================================================================
+  // 4. ORGANIC ROAD NETWORK (HIGHWAYS, DOWNTOWN AVENUES, MOUNTAIN ROAD, ROUTE 68)
+  // ============================================================================
+  const addFlatRoadSegment = (
+    x1: number,
+    z1: number,
+    x2: number,
+    z2: number,
+    width = 12,
+    mat: THREE.MeshStandardMaterial = roadMat,
+    centerLine = true
+  ) => {
+    const steps = Math.max(1, Math.ceil(Math.hypot(x2 - x1, z2 - z1) / 14));
+    for (let i = 0; i < steps; i++) {
+      const t0 = i / steps;
+      const t1 = (i + 1) / steps;
+      const tm = (t0 + t1) / 2;
+      const sx = x1 + (x2 - x1) * t0;
+      const sz = z1 + (z2 - z1) * t0;
+      const ex = x1 + (x2 - x1) * t1;
+      const ez = z1 + (z2 - z1) * t1;
+      const mx = (sx + ex) / 2;
+      const mz = (sz + ez) / 2;
+
+      const y0 = getTerrainHeight(sx, sz, false);
+      const y1 = getTerrainHeight(ex, ez, false);
+      const ym = (y0 + y1) / 2 + 0.08;
+
+      const segLen = Math.hypot(ex - sx, ez - sz) + 0.35;
+      const yaw = Math.atan2(ex - sx, ez - sz);
+      const pitch = Math.atan2(y1 - y0, segLen);
+
+      const segGroup = new THREE.Group();
+      segGroup.position.set(mx, ym, mz);
+      segGroup.rotation.order = 'YXZ';
+      segGroup.rotation.y = yaw;
+      segGroup.rotation.x = -pitch;
+
+      const rMesh = new THREE.Mesh(new THREE.PlaneGeometry(width, segLen), mat);
+      rMesh.rotation.x = -Math.PI / 2;
+      rMesh.receiveShadow = true;
+      segGroup.add(rMesh);
+      roadMeshes.push({ mesh: rMesh, w: width, d: segLen });
+
+      if (centerLine) {
+        const lineMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.28, segLen * 0.65),
+          yellowLineMat
+        );
+        lineMesh.rotation.x = -Math.PI / 2;
+        lineMesh.position.y = 0.02;
+        segGroup.add(lineMesh);
+      }
+
+      scene.add(segGroup);
+    }
+  };
+
+  // Downtown Avenues (North-South)
+  const nsRoads = [-100, -32, 32, 95];
+  for (const rx of nsRoads) {
+    addFlatRoadSegment(rx, -70, rx, 115, 13);
+  }
+  // Downtown Boulevards (East-West)
+  const ewRoads = [-70, -5, 65, 115];
+  for (const rz of ewRoads) {
+    addFlatRoadSegment(-100, rz, 95, rz, 13);
+  }
+
+  // Vinewood Hills Mountain Highway (climbing from z=-70 up to the Observatory at z=-145, y=24m!)
+  addFlatRoadSegment(-32, -70, -10, -145, 12);
+  addFlatRoadSegment(32, -70, 10, -145, 12);
+  // Observatory Summit Loop Plaza
+  addFlatRoadSegment(-42, -145, 42, -145, 12);
+
+  // West Coastal Highway & Golden Gate Suspension Bridge Deck
+  addFlatRoadSegment(-100, 115, -125, -35, 12);
+  addFlatRoadSegment(-125, -35, -125, -145, 13); // Across the Crimson Suspension Bridge
+  addFlatRoadSegment(-125, -145, -42, -145, 11); // Bridge North Exit into Vinewood Summit!
+
+  // Route 68 Desert Highway (connecting Downtown to Sandy Shores Airfield)
+  addFlatRoadSegment(95, -5, 172, -5, 12, desertRoadMat);
+  addFlatRoadSegment(95, -70, 172, -70, 12, desertRoadMat);
+  addFlatRoadSegment(95, 65, 172, 20, 12, desertRoadMat);
+
+  // Sandy Shores Desert Airstrip Runway (x = 172, z from -135 to 25)
+  addFlatRoadSegment(172, -135, 172, 25, 22, desertRoadMat, true);
+
+  // LSIA International Airport Jet Runway (z = 155, x from -65 to 195)
+  addFlatRoadSegment(-32, 115, -32, 155, 14, runwayMat);
+  addFlatRoadSegment(32, 115, 32, 155, 14, runwayMat);
+  addFlatRoadSegment(95, 115, 95, 155, 14, runwayMat);
+  addFlatRoadSegment(-70, 155, 195, 155, 28, runwayMat, false);
+
+  // Runway White Centerline Dashes & Threshold Markings at LSIA
+  for (let rx = -58; rx <= 185; rx += 14) {
+    const dash = new THREE.Mesh(new THREE.PlaneGeometry(7.5, 0.7), whiteLineMat);
+    dash.rotation.x = -Math.PI / 2;
+    dash.position.set(rx, 0.12, 155);
+    scene.add(dash);
+  }
+
+  // ============================================================================
+  // 5. ZONE 1: VESPUCCI BEACH & DEL PERRO PLEASURE PIER (WEST COAST)
+  // ============================================================================
+  // Wooden Pleasure Pier Deck (x in [-230, -106], z in [6, 34], y = 2.2)
+  const pierDeckMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.85 });
+  const pierDeck = new THREE.Mesh(new THREE.BoxGeometry(110, 0.6, 28), pierDeckMat);
+  pierDeck.position.set(-176, 1.95, 20);
+  pierDeck.receiveShadow = true;
+  pierDeck.castShadow = true;
+  scene.add(pierDeck);
+
+  // Sloped Entrance Ramp from Beach Road (-106, y=0) to Pier Deck (-122, y=2.2)
+  const pierRamp = new THREE.Mesh(new THREE.BoxGeometry(18, 0.5, 28), pierDeckMat);
+  pierRamp.position.set(-114, 1.05, 20);
+  pierRamp.rotation.z = -Math.atan2(2.2, 16);
+  scene.add(pierRamp);
+
+  // Wooden Pilings supporting the Pier in the Ocean
+  const pilingMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 });
+  for (let px = -128; px >= -224; px -= 16) {
+    for (const pz of [8, 20, 32]) {
+      const piling = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 5.5, 8), pilingMat);
+      piling.position.set(px, -0.5, pz);
+      scene.add(piling);
+    }
+  }
+
+  // Giant Animated Neon Ferris Wheel on Del Perro Pier!
+  const ferris = createFerrisWheelMesh();
+  ferris.root.position.set(-170, 2.2, 10);
+  scene.add(ferris.root);
+  animatedProps.push({ kind: 'ferris_wheel', object: ferris.wheel, speed: 0.45 });
+
+  // Pier Neon Entrance Sign ("DEL PERRO PIER")
+  const pierArch = new THREE.Mesh(
+    new THREE.BoxGeometry(1.2, 8.5, 24),
+    new THREE.MeshStandardMaterial({ color: 0xf43f5e, roughness: 0.4 })
+  );
+  pierArch.position.set(-124, 6.2, 20);
+  scene.add(pierArch);
+  const pierSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(16, 2.6),
+    new THREE.MeshBasicMaterial({
+      map: createSignTexture('DEL PERRO PLEASURE PIER', '#831843', '#fde047'),
+      side: THREE.DoubleSide,
+    })
+  );
+  pierSign.rotation.y = Math.PI / 2;
+  pierSign.position.set(-123.3, 8.2, 20);
+  scene.add(pierSign);
+
+  // Lifeguard Towers & Palm Trees along Vespucci Beach
+  const lifeguardColors = [0xef4444, 0x38bdf8, 0xfacc15];
+  [-25, 55, 115].forEach((bz, idx) => {
+    const by = getTerrainHeight(-142, bz, false);
+    const tower = new THREE.Group();
+    const cabin = new THREE.Mesh(
+      new THREE.BoxGeometry(3.2, 2.4, 3.2),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 })
+    );
+    cabin.position.y = 2.6;
+    const roof = new THREE.Mesh(
+      new THREE.ConeGeometry(2.8, 1.2, 4),
+      new THREE.MeshStandardMaterial({ color: lifeguardColors[idx % 3] })
+    );
+    roof.position.y = 4.4;
+    roof.rotation.y = Math.PI / 4;
+    const stilts = new THREE.Mesh(
+      new THREE.BoxGeometry(2.6, 1.6, 2.6),
+      new THREE.MeshStandardMaterial({ color: 0x94a3b8 })
+    );
+    stilts.position.y = 0.8;
+    tower.add(stilts, cabin, roof);
+    tower.position.set(-142, by, bz);
+    scene.add(tower);
   });
 
-  // 9. Landmark Interaction Rings
-  for (const lm of LANDMARKS) {
-    if (!lm.interactPrompt) continue;
-    const ringGeo = new THREE.RingGeometry(2.2, 2.8, 28);
-    ringGeo.rotateX(-Math.PI / 2);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: lm.color,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.88,
-    });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.position.set(lm.x, 0.08, lm.z);
-    group.add(ring);
-  }
-
-  // 10. Road Node Graph for AI Traffic
-  const nodes: RoadNode[] = [];
-  for (let i = 0; i <= GRID; i++) {
-    for (let j = 0; j <= GRID; j++) {
-      nodes.push({ i, j, x: roadCoord(i), z: roadCoord(j) });
+  // 28 Swaying Palm Trees along Vespucci Beach Promenade & Pier Entrance
+  for (let pz = -40; pz <= 160; pz += 14) {
+    for (const px of [-106, -130]) {
+      if (pz >= 4 && pz <= 36 && px < -110) continue; // skip pier footprint
+      const palm = createPalmTreeMesh();
+      palm.position.set(px, getTerrainHeight(px, pz, false), pz);
+      palm.rotation.y = (pz * 0.7) % (Math.PI * 2);
+      scene.add(palm);
     }
   }
 
-  // Outer World Boundary Colliders
-  const worldWall = 8;
-  colliders.push(
-    { minX: -HALF - worldWall, maxX: HALF + worldWall, minZ: -HALF - 40, maxZ: -HALF - 2 },
-    { minX: -HALF - worldWall, maxX: HALF + worldWall, minZ: HALF + 2, maxZ: HALF + worldWall },
-    { minX: -HALF - worldWall, maxX: -HALF - 1, minZ: -HALF - 40, maxZ: HALF + worldWall },
-    { minX: HALF + 1, maxX: HALF + worldWall, minZ: -HALF - 40, maxZ: HALF + worldWall }
-  );
+  // ============================================================================
+  // 6. ZONE 2: GOLDEN GATE CRIMSON SUSPENSION BRIDGE (NORTH-WEST BAY)
+  // ============================================================================
+  const bridgeRedMat = new THREE.MeshStandardMaterial({
+    color: 0xdc2626,
+    roughness: 0.4,
+    metalness: 0.45,
+  });
+  for (const bz of [-58, -118]) {
+    const by = getTerrainHeight(-125, bz, false);
+    for (const bx of [-132, -118]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(2.2, 38, 2.2), bridgeRedMat);
+      leg.position.set(bx, by + 14, bz);
+      leg.castShadow = true;
+      scene.add(leg);
+    }
+    // Crossbeams on bridge tower
+    for (const cy of [12, 24, 32]) {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(16, 1.8, 1.8), bridgeRedMat);
+      beam.position.set(-125, by + cy, bz);
+      scene.add(beam);
+    }
+  }
 
-  scene.add(group);
+  // ============================================================================
+  // 7. ZONE 3: VINEWOOD HILLS, OBSERVATORY & GIANT VINEWOOD SIGN (NORTH)
+  // ============================================================================
+  // Galileo Summit Observatory (at x = -10, z = -175, y = 24m)
+  const obsY = getTerrainHeight(-10, -175, false);
+  addBuildingBox(-10, -175, 42, 16, 10, 0xf8fafc, 'civic');
+
+  const copperDomeMat = new THREE.MeshStandardMaterial({
+    color: 0xd97706,
+    metalness: 0.72,
+    roughness: 0.25,
+  });
+  // Main Central Telescope Dome & 2 Wing Domes
+  const mainDome = new THREE.Mesh(
+    new THREE.SphereGeometry(7.5, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2),
+    copperDomeMat
+  );
+  mainDome.position.set(-10, obsY + 10, -175);
+  scene.add(mainDome);
+
+  for (const dx of [-26, 6]) {
+    const sideDome = new THREE.Mesh(
+      new THREE.SphereGeometry(4.8, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+      copperDomeMat
+    );
+    sideDome.position.set(dx, obsY + 10, -175);
+    scene.add(sideDome);
+  }
+
+  // Observatory Sign & Obelisk Monument in Summit Plaza
+  const obelisk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.4, 1.2, 14, 4),
+    new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.4 })
+  );
+  obelisk.position.set(-10, obsY + 7, -154);
+  scene.add(obelisk);
+
+  const obsSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(16, 2.5),
+    new THREE.MeshBasicMaterial({
+      map: createSignTexture('GALILEO OBSERVATORY · VINEWOOD HILLS', '#1e1b4b', '#fde047'),
+      side: THREE.DoubleSide,
+    })
+  );
+  obsSign.position.set(-10, obsY + 11.5, -166.8);
+  scene.add(obsSign);
+
+  // Giant 3D "VINEWOOD" Sign on the North-East Mountain Ridge!
+  const vinewoodWord = 'VINEWOOD';
+  const letterMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0xe2e8f0,
+    emissiveIntensity: 0.35,
+    roughness: 0.3,
+  });
+  for (let i = 0; i < vinewoodWord.length; i++) {
+    const lx = 26 + i * 6.8;
+    const lz = -168;
+    const ly = getTerrainHeight(lx, lz, false);
+    const letterCanvas = createSignTexture(vinewoodWord[i], '#ffffff', '#0f172a');
+    const letterBoard = new THREE.Mesh(
+      new THREE.BoxGeometry(5.2, 9.5, 0.8),
+      new THREE.MeshStandardMaterial({ map: letterCanvas, roughness: 0.3 })
+    );
+    letterBoard.position.set(lx, ly + 5.2, lz);
+    letterBoard.castShadow = true;
+    scene.add(letterBoard);
+  }
+
+  // Vinewood Hills Luxury Cliffside Villas
+  addBuildingBox(-58, -162, 18, 14, 9, 0xfef3c7, 'apt');
+  addBuildingBox(52, -142, 16, 14, 8, 0xe0f2fe, 'glass');
+
+  // ============================================================================
+  // 8. ZONE 4: DOWNTOWN LOS SANTOS SKYSCRAPERS & ICONIC SHOPS (CENTER)
+  // ============================================================================
+  // 1) Maze Bank Tower (Centerpiece Skyscraper at x = 0, z = -38)
+  addBuildingBox(0, -38, 24, 24, 62, 0xcbd5e1, 'glass');
+  const mazeCrown = new THREE.Mesh(
+    new THREE.CylinderGeometry(11, 13, 14, 16),
+    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.55, roughness: 0.25 })
+  );
+  mazeCrown.position.set(0, 69, -38);
+  scene.add(mazeCrown);
+  const mazeSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(16, 3.2),
+    new THREE.MeshBasicMaterial({
+      map: createSignTexture('MAZE BANK TOWER', '#7f1d1d', '#ffffff'),
+      side: THREE.DoubleSide,
+    })
+  );
+  mazeSign.position.set(0, 56, -25.8);
+  scene.add(mazeSign);
+
+  // 2) Pacific Standard Bank (at x = -56, z = -34)
+  addBuildingBox(-56, -34, 24, 20, 22, 0xd6d3d1, 'civic');
+  for (let px = -65; px <= -47; px += 4.5) {
+    const pillar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.65, 0.75, 14, 12),
+      new THREE.MeshStandardMaterial({ color: 0xf5f5f4, roughness: 0.45 })
+    );
+    pillar.position.set(px, 7, -23.2);
+    scene.add(pillar);
+  }
+  const bankSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(16, 2.8),
+    new THREE.MeshBasicMaterial({
+      map: createSignTexture('PACIFIC STANDARD BANK', '#14532d', '#fde047'),
+      side: THREE.DoubleSide,
+    })
+  );
+  bankSign.position.set(-56, 16.5, -23.8);
+  scene.add(bankSign);
+  addBarrel(-44, -22);
+  addBarrel(-68, -22);
+
+  // 3) Pillbox Hill Medical Center (x = 56, z = -38)
+  addBuildingBox(56, -38, 22, 20, 28, 0xe0f2fe, 'civic');
+  const hospSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(14, 2.5),
+    new THREE.MeshBasicMaterial({
+      map: createSignTexture('+ PILLBOX MEDICAL +', '#064e3b', '#4ade80'),
+      side: THREE.DoubleSide,
+    })
+  );
+  hospSign.position.set(56, 18, -27.8);
+  scene.add(hospSign);
+
+  // 4) Ammu-Nation Flagship Store (x = 56, z = 28)
+  addBuildingBox(56, 28, 22, 18, 12, 0x7f1d1d, 'street');
+  const ammuSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(15, 2.8),
+    new THREE.MeshBasicMaterial({
+      map: createSignTexture('AMMU-NATION GUNS & RPG', '#991b1b', '#fef08a'),
+      side: THREE.DoubleSide,
+    })
+  );
+  ammuSign.position.set(56, 10.5, 18.8);
+  scene.add(ammuSign);
+  addBarrel(43, 20);
+
+  // 5) Los Santos Customs Flagship Garage (x = -56, z = 48)
+  addBuildingBox(-56, 48, 24, 18, 12, 0x3b0764, 'ind');
+  const customsSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(16, 2.8),
+    new THREE.MeshBasicMaterial({
+      map: createSignTexture('LOS SANTOS CUSTOMS', '#4c1d95', '#e9d5ff'),
+      side: THREE.DoubleSide,
+    })
+  );
+  customsSign.position.set(-56, 10.5, 38.8);
+  scene.add(customsSign);
+
+  // 6) LSPD Police HQ & Additional Downtown High-Rises
+  addBuildingBox(56, 86, 24, 18, 20, 0x1e3a8a, 'civic');
+  addBuildingBox(-62, 86, 22, 20, 38, 0x334155, 'glass');
+  addBuildingBox(0, 86, 22, 18, 34, 0x475569, 'apt');
+  addBuildingBox(-75, -8, 16, 20, 30, 0x38bdf8, 'glass');
+  addBuildingBox(72, -8, 16, 20, 26, 0x64748b, 'apt');
+
+  // ============================================================================
+  // 9. ZONE 5: SANDY SHORES RED ROCK DESERT, WIND FARM & TREVOR'S AIRFIELD (EAST)
+  // ============================================================================
+  // 5 Giant Animated Wind Turbines along the Senora Desert Ridge!
+  const turbineCoords: Array<[number, number]> = [
+    [122, -115],
+    [126, -78],
+    [122, -32],
+    [126, 12],
+    [122, 48],
+  ];
+  turbineCoords.forEach(([tx, tz], idx) => {
+    const wt = createWindTurbineMesh();
+    wt.root.position.set(tx, getTerrainHeight(tx, tz, false), tz);
+    wt.root.rotation.y = -Math.PI / 3;
+    wt.rotor.rotation.z = idx * 1.1;
+    scene.add(wt.root);
+    animatedProps.push({ kind: 'wind_turbine', object: wt.rotor, speed: 1.4 + (idx % 2) * 0.3 });
+  });
+
+  // Sandy Shores Airfield Hangar, Control Tower & Fuel Depot (around x = 172, z = -75)
+  addBuildingBox(194, -85, 18, 26, 11, 0x78350f, 'ind'); // Rusty Desert Hangar
+  addBuildingBox(194, -52, 9, 9, 22, 0x9a3412, 'ind'); // Airfield Control Tower
+  const airfieldSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(16, 2.6),
+    new THREE.MeshBasicMaterial({
+      map: createSignTexture('SANDY SHORES AIRFIELD · TPI', '#7c2d12', '#fed7aa'),
+      side: THREE.DoubleSide,
+    })
+  );
+  airfieldSign.rotation.y = -Math.PI / 2;
+  airfieldSign.position.set(184.8, 12.5, -85);
+  scene.add(airfieldSign);
+
+  // Helipad 'H' Circle at Sandy Shores Airfield (x = 172, z = -55)
+  const createHelipad = (hx: number, hz: number) => {
+    const hy = getTerrainHeight(hx, hz, false) + 0.12;
+    const pad = new THREE.Mesh(
+      new THREE.RingGeometry(5.2, 6.0, 28),
+      new THREE.MeshBasicMaterial({ color: 0xfacc15, side: THREE.DoubleSide })
+    );
+    pad.rotation.x = -Math.PI / 2;
+    pad.position.set(hx, hy, hz);
+    scene.add(pad);
+  };
+  createHelipad(172, -55);
+
+  // Red Rock Desert Buttes & Explosive Barrels at Sandy Shores
+  for (const [bx, bz] of [
+    [156, -92],
+    [184, -95],
+    [184, -68],
+    [156, -42],
+  ]) {
+    addBarrel(bx, bz);
+  }
+
+  // 32 Saguaro Cacti & Red Rock Boulders across Sandy Shores Desert
+  for (let cz = -155; cz <= 65; cz += 18) {
+    for (const cx of [112, 145, 208]) {
+      const cactus = createCactusMesh();
+      cactus.position.set(cx, getTerrainHeight(cx, cz, false), cz);
+      cactus.rotation.y = cz * 0.5;
+      scene.add(cactus);
+    }
+  }
+
+  // ============================================================================
+  // 10. ZONE 6: LSIA INTERNATIONAL AIRPORT & COMMERCIAL JETS (SOUTH)
+  // ============================================================================
+  // LSIA Curved Terminal & Iconic Control Tower
+  addBuildingBox(-15, 130, 44, 16, 14, 0x1e293b, 'glass');
+  addBuildingBox(28, 128, 10, 10, 38, 0xe2e8f0, 'civic'); // LSIA Air Traffic Control Tower
+  const lsiaSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(20, 3.0),
+    new THREE.MeshBasicMaterial({
+      map: createSignTexture('LOS SANTOS INTL AIRPORT (LSIA)', '#0f172a', '#38bdf8'),
+      side: THREE.DoubleSide,
+    })
+  );
+  lsiaSign.position.set(-15, 14, 121.8);
+  scene.add(lsiaSign);
+
+  // LSIA VIP Helipad (x = -55, z = 145)
+  createHelipad(-55, 145);
+
+  // 2 Giant Commercial Passenger Jet Airliners parked on the LSIA Tarmac!
+  const addCommercialJet = (jx: number, jz: number, yaw: number) => {
+    const jet = new THREE.Group();
+    const whiteMat = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      roughness: 0.25,
+      metalness: 0.35,
+    });
+    const blueTailMat = new THREE.MeshStandardMaterial({
+      color: 0x0284c7,
+      roughness: 0.3,
+      metalness: 0.4,
+    });
+    const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 32, 16), whiteMat);
+    fuselage.rotation.x = Math.PI / 2;
+    fuselage.position.y = 3.6;
+    jet.add(fuselage);
+
+    const wings = new THREE.Mesh(new THREE.BoxGeometry(34, 0.35, 5.2), whiteMat);
+    wings.position.set(0, 3.2, -1);
+    jet.add(wings);
+
+    const tailFin = new THREE.Mesh(new THREE.BoxGeometry(0.45, 7.5, 4.5), blueTailMat);
+    tailFin.position.set(0, 7.2, 13.5);
+    jet.add(tailFin);
+
+    for (const ex of [-7.5, 7.5]) {
+      const engine = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.0, 1.0, 3.6, 12),
+        blueTailMat
+      );
+      engine.rotation.x = Math.PI / 2;
+      engine.position.set(ex, 2.1, -1.5);
+      jet.add(engine);
+    }
+
+    jet.position.set(jx, getTerrainHeight(jx, jz, false), jz);
+    jet.rotation.y = yaw;
+    scene.add(jet);
+    colliders.push({
+      minX: jx - 12,
+      maxX: jx + 12,
+      minZ: jz - 12,
+      maxZ: jz + 12,
+      maxY: 10,
+    });
+  };
+
+  addCommercialJet(52, 182, Math.PI / 2);
+  addCommercialJet(125, 182, -Math.PI / 2);
+
+  // ============================================================================
+  // 11. STUNT JUMP RAMPS ACROSS ALL REGIONS
+  // ============================================================================
+  for (const r of STUNT_RAMPS) {
+    const rampMesh = createStuntRampMesh(r.width, r.length, r.height);
+    rampMesh.position.set(r.x, getTerrainHeight(r.x, r.z, false), r.z);
+    rampMesh.rotation.y = r.yaw;
+    scene.add(rampMesh);
+  }
+
+  // ============================================================================
+  // 12. STREET LAMPS & TREES IN DOWNTOWN
+  // ============================================================================
+  for (const rx of nsRoads) {
+    for (let z = -60; z <= 100; z += 32) {
+      const lamp = createLampMesh();
+      lamp.position.set(rx + 7.2, getTerrainHeight(rx + 7.2, z, false), z);
+      scene.add(lamp);
+    }
+  }
+  for (let tx = -85; tx <= 85; tx += 36) {
+    const tree = createTreeMesh();
+    tree.position.set(tx, getTerrainHeight(tx, 10, false), 10);
+    scene.add(tree);
+  }
+
+  // ============================================================================
+  // 13. AI TRAFFIC ROAD GRAPH
+  // ============================================================================
+  for (let r = 0; r < ewRoads.length; r++) {
+    for (let c = 0; c < nsRoads.length; c++) {
+      const id = `${r}_${c}`;
+      const x = nsRoads[c];
+      const z = ewRoads[r];
+      const neighbors: string[] = [];
+      if (r > 0) neighbors.push(`${r - 1}_${c}`);
+      if (r < ewRoads.length - 1) neighbors.push(`${r + 1}_${c}`);
+      if (c > 0) neighbors.push(`${r}_${c - 1}`);
+      if (c < nsRoads.length - 1) neighbors.push(`${r}_${c + 1}`);
+      roadNodes.set(id, { id, x, z, neighbors });
+    }
+  }
+
+  // ============================================================================
+  // 14. TEXTURE UPGRADE CALLBACK
+  // ============================================================================
+  const applyTextures = (tex: WorldTextures) => {
+    if (skyMesh) {
+      const sm = skyMesh.material as THREE.MeshBasicMaterial;
+      sm.map = tex.sky;
+      sm.color.setHex(0xffffff);
+      sm.needsUpdate = true;
+    }
+
+    for (const r of roadMeshes) {
+      const mat = (r.mesh.material as THREE.MeshStandardMaterial).clone();
+      const map = tex.asphalt.clone();
+      map.needsUpdate = true;
+      tilePlaneUVs(r.mesh.geometry as THREE.PlaneGeometry, r.w, r.d, 8);
+      mat.map = map;
+      mat.color.setHex(0x8a8f98);
+      mat.needsUpdate = true;
+      r.mesh.material = mat;
+    }
+
+    for (const sw of sidewalkMeshes) {
+      const mat = (sw.mesh.material as THREE.MeshStandardMaterial).clone();
+      const map = tex.sidewalk.clone();
+      map.needsUpdate = true;
+      tileBoxUVs(sw.mesh.geometry as THREE.BoxGeometry, sw.w, 0.22, sw.d, 6);
+      mat.map = map;
+      mat.color.setHex(0xcbd5e1);
+      mat.needsUpdate = true;
+      sw.mesh.material = mat;
+    }
+
+    for (const rf of roofMeshes) {
+      const mat = (rf.mesh.material as THREE.MeshStandardMaterial).clone();
+      const map = tex.roof.clone();
+      map.needsUpdate = true;
+      tileBoxUVs(rf.mesh.geometry as THREE.BoxGeometry, rf.w, 0.25, rf.d, 6);
+      mat.map = map;
+      mat.color.setHex(0x94a3b8);
+      mat.needsUpdate = true;
+      rf.mesh.material = mat;
+    }
+
+    for (const f of facadeMeshes) {
+      const mat = f.mesh.material as THREE.MeshStandardMaterial;
+      const src =
+        f.kind === 'glass'
+          ? tex.glass
+          : f.kind === 'apt'
+            ? tex.apt
+            : f.kind === 'civic'
+              ? tex.civic
+              : f.kind === 'ind'
+                ? tex.industrial
+                : tex.street;
+      mat.map = src;
+      mat.needsUpdate = true;
+    }
+  };
 
   return {
     colliders,
-    treeColliders,
     barrels,
     shootableMeshes,
-    nodes,
-    npcLoops,
-    parkedSpots,
-    policeSpawns,
+    roadNodes,
+    animatedProps,
+    applyTextures,
   };
 }

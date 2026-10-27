@@ -244,10 +244,137 @@ export interface VehicleRig {
  */
 export function createVehicleMesh(opts: {
   color: number;
-  kind: 'sport' | 'sedan' | 'suv' | 'police' | 'swat' | 'taxi' | 'cash_truck';
+  kind:
+    | 'sport'
+    | 'sedan'
+    | 'suv'
+    | 'police'
+    | 'swat'
+    | 'taxi'
+    | 'cash_truck'
+    | 'offroad'
+    | 'buzzard';
 }): VehicleRig {
   const g = new THREE.Group();
   g.rotation.order = 'YXZ';
+
+  // Special Flyable Attack Helicopter ("Buzzard")
+  if (opts.kind === 'buzzard') {
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x18181b,
+      roughness: 0.28,
+      metalness: 0.65,
+    });
+    const goldMat = new THREE.MeshStandardMaterial({
+      color: 0xfacc15,
+      roughness: 0.25,
+      metalness: 0.75,
+    });
+    const glassMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      roughness: 0.12,
+      metalness: 0.8,
+      transparent: true,
+      opacity: 0.62,
+    });
+    const darkMat = new THREE.MeshStandardMaterial({
+      color: 0x09090b,
+      roughness: 0.5,
+      metalness: 0.4,
+    });
+
+    // Fuselage & nose
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.5, 3.6), bodyMat);
+    cabin.position.set(0, 1.35, 0);
+    g.add(cabin);
+
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.96, 0.22, 3.4), goldMat);
+    stripe.position.set(0, 1.35, 0);
+    g.add(stripe);
+
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(1.05, 12, 10), glassMat);
+    nose.scale.set(0.88, 0.78, 1.35);
+    nose.position.set(0, 1.28, -1.65);
+    g.add(nose);
+
+    // Tail boom & vertical fin
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 4.4), bodyMat);
+    tail.position.set(0, 1.55, 3.6);
+    g.add(tail);
+
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.3, 0.9), goldMat);
+    fin.position.set(0, 2.05, 5.5);
+    g.add(fin);
+
+    // Landing skids
+    for (const sx of [-0.95, 0.95]) {
+      const skid = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 3.8), darkMat);
+      skid.position.set(sx, 0.12, -0.1);
+      g.add(skid);
+      for (const sz of [-1.0, 1.0]) {
+        const strut = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.65, 0.1), darkMat);
+        strut.position.set(sx, 0.42, sz);
+        g.add(strut);
+      }
+    }
+
+    // Twin Stub Wings with Rocket Pods & Miniguns
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.14, 0.75), bodyMat);
+    wing.position.set(0, 1.15, -0.2);
+    g.add(wing);
+
+    for (const sx of [-1.55, 1.55]) {
+      const pod = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.24, 0.24, 1.35, 10),
+        darkMat
+      );
+      pod.rotation.x = Math.PI / 2;
+      pod.position.set(sx, 0.95, -0.35);
+      g.add(pod);
+
+      const gun = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.06, 1.6, 8),
+        goldMat
+      );
+      gun.rotation.x = Math.PI / 2;
+      gun.position.set(sx * 0.72, 0.95, -0.95);
+      g.add(gun);
+    }
+
+    // Main Rotor & Tail Rotor (stored in wheels[0], wheels[1] so engine spins them!)
+    const mainRotor = new THREE.Group();
+    mainRotor.position.set(0, 2.3, 0);
+    const bladeMat = new THREE.MeshBasicMaterial({ color: 0x18181b });
+    mainRotor.add(
+      new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.05, 0.32), bladeMat),
+      new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.05, 9.2), bladeMat)
+    );
+    g.add(mainRotor);
+
+    const tailRotor = new THREE.Group();
+    tailRotor.position.set(0.32, 2.05, 5.55);
+    tailRotor.add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.7, 0.2), bladeMat));
+    g.add(tailRotor);
+
+    const smokeGroup = new THREE.Group();
+    smokeGroup.position.set(0, 1.8, 1.2);
+    const puff = new THREE.Mesh(
+      new THREE.SphereGeometry(0.6, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0x27272a, transparent: true, opacity: 0.7 })
+    );
+    smokeGroup.add(puff);
+    smokeGroup.visible = false;
+    g.add(smokeGroup);
+
+    g.traverse((o) => {
+      if (o instanceof THREE.Mesh && o !== puff) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+      }
+    });
+
+    return { root: g, bodyMat, wheels: [mainRotor, tailRotor], smokeGroup };
+  }
 
   const baseColor =
     opts.kind === 'police'
@@ -294,7 +421,8 @@ export function createVehicleMesh(opts: {
   });
   const rubberMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.85 });
 
-  const isHeavy = opts.kind === 'swat' || opts.kind === 'cash_truck';
+  const isHeavy =
+    opts.kind === 'swat' || opts.kind === 'cash_truck' || opts.kind === 'offroad';
   const bodyH = isHeavy ? 0.96 : opts.kind === 'sport' ? 0.42 : 0.52;
   const bodyL = isHeavy ? 4.85 : opts.kind === 'sport' ? 4.25 : 4.35;
   const bodyW = isHeavy ? 2.08 : opts.kind === 'sport' ? 1.96 : 1.88;
@@ -673,3 +801,243 @@ export function createMissionBeaconMesh(color = 0xfacc15): THREE.Group {
   g.add(beam);
   return g;
 }
+
+export function createPalmTreeMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x78553a, roughness: 0.9 });
+  const frondMat = new THREE.MeshStandardMaterial({
+    color: 0x16a34a,
+    roughness: 0.65,
+    side: THREE.DoubleSide,
+  });
+
+  // Segmented slightly curved palm trunk
+  for (let i = 0; i < 5; i++) {
+    const seg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22 - i * 0.02, 0.25 - i * 0.02, 1.35, 7),
+      trunkMat
+    );
+    seg.position.set(i * 0.09, 0.65 + i * 1.25, 0);
+    seg.rotation.z = -0.06 * i;
+    seg.castShadow = true;
+    g.add(seg);
+  }
+
+  // Crown of 7 palm fronds
+  const crown = new THREE.Group();
+  crown.position.set(0.38, 6.4, 0);
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    const frondPivot = new THREE.Group();
+    frondPivot.rotation.y = a;
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.06, 2.45), frondMat);
+    leaf.position.set(0, -0.25, 1.15);
+    leaf.rotation.x = 0.38;
+    leaf.castShadow = true;
+    frondPivot.add(leaf);
+    crown.add(frondPivot);
+  }
+  g.add(crown);
+  return g;
+}
+
+export function createCactusMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.85 });
+  const main = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 3.6, 8), mat);
+  main.position.y = 1.8;
+  main.castShadow = true;
+  g.add(main);
+
+  for (const side of [-1, 1]) {
+    const armH = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.9, 7), mat);
+    armH.rotation.z = Math.PI / 2;
+    armH.position.set(side * 0.5, 1.7 + side * 0.25, 0);
+    const armV = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.18, 1.3, 7), mat);
+    armV.position.set(side * 0.85, 2.25 + side * 0.25, 0);
+    armH.castShadow = true;
+    armV.castShadow = true;
+    g.add(armH, armV);
+  }
+  return g;
+}
+
+export function createFerrisWheelMesh(): { root: THREE.Group; wheel: THREE.Group } {
+  const root = new THREE.Group();
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0xf8fafc,
+    metalness: 0.55,
+    roughness: 0.3,
+  });
+  const neonPink = new THREE.MeshStandardMaterial({
+    color: 0xf472b6,
+    emissive: 0xec4899,
+    emissiveIntensity: 1.35,
+  });
+  const neonCyan = new THREE.MeshStandardMaterial({
+    color: 0x38bdf8,
+    emissive: 0x0ea5e9,
+    emissiveIntensity: 1.35,
+  });
+
+  // A-frame support legs on both sides
+  for (const zOff of [-2.2, 2.2]) {
+    for (const xTilt of [-0.32, 0.32]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.45, 21, 8), frameMat);
+      leg.position.set(Math.sin(xTilt) * 8.5, 9.5, zOff);
+      leg.rotation.z = xTilt;
+      leg.castShadow = true;
+      root.add(leg);
+    }
+  }
+
+  const wheel = new THREE.Group();
+  wheel.position.set(0, 19.0, 0);
+
+  // Outer & Inner Neon Rings
+  const outerRing = new THREE.Mesh(new THREE.TorusGeometry(13.5, 0.35, 10, 36), neonPink);
+  const innerRing = new THREE.Mesh(new THREE.TorusGeometry(8.5, 0.22, 8, 28), neonCyan);
+  wheel.add(outerRing, innerRing);
+
+  // 12 Spokes & Gondola Cabins
+  const cabinColors = [0xfacc15, 0x38bdf8, 0xf43f5e, 0x4ade80, 0xa855f7, 0xfb923c];
+  for (let i = 0; i < 12; i++) {
+    const angle = (i / 12) * Math.PI * 2;
+    const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 27, 6), frameMat);
+    spoke.rotation.z = angle;
+    wheel.add(spoke);
+
+    const cx = Math.cos(angle) * 13.5;
+    const cy = Math.sin(angle) * 13.5;
+    const cabin = new THREE.Mesh(
+      new THREE.BoxGeometry(1.9, 1.7, 2.2),
+      new THREE.MeshStandardMaterial({
+        color: cabinColors[i % cabinColors.length],
+        emissive: cabinColors[i % cabinColors.length],
+        emissiveIntensity: 0.45,
+        roughness: 0.3,
+      })
+    );
+    cabin.position.set(cx, cy, 0);
+    wheel.add(cabin);
+  }
+
+  root.add(wheel);
+  return { root, wheel };
+}
+
+export function createWindTurbineMesh(): { root: THREE.Group; rotor: THREE.Group } {
+  const root = new THREE.Group();
+  const whiteMat = new THREE.MeshStandardMaterial({
+    color: 0xf1f5f9,
+    roughness: 0.35,
+    metalness: 0.25,
+  });
+  const redTipMat = new THREE.MeshStandardMaterial({
+    color: 0xef4444,
+    emissive: 0xdc2626,
+    emissiveIntensity: 0.4,
+  });
+
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 1.15, 26, 12), whiteMat);
+  tower.position.y = 13;
+  tower.castShadow = true;
+  root.add(tower);
+
+  const nacelle = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 3.6), whiteMat);
+  nacelle.position.set(0, 26.2, 0);
+  root.add(nacelle);
+
+  const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), redTipMat);
+  beacon.position.set(0, 27.2, 0.8);
+  root.add(beacon);
+
+  const rotor = new THREE.Group();
+  rotor.position.set(0, 26.2, -1.9);
+
+  const hub = new THREE.Mesh(new THREE.ConeGeometry(0.75, 1.5, 10), whiteMat);
+  hub.rotation.x = -Math.PI / 2;
+  rotor.add(hub);
+
+  for (let i = 0; i < 3; i++) {
+    const bGroup = new THREE.Group();
+    bGroup.rotation.z = (i / 3) * Math.PI * 2;
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.65, 11.5, 0.14), whiteMat);
+    blade.position.y = 5.8;
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.52, 2.0, 0.16), redTipMat);
+    tip.position.y = 10.6;
+    bGroup.add(blade, tip);
+    rotor.add(bGroup);
+  }
+
+  root.add(rotor);
+  return { root, rotor };
+}
+
+export function createStuntRampMesh(
+  width: number,
+  length: number,
+  height: number
+): THREE.Group {
+  const g = new THREE.Group();
+
+  // Build wedge geometry where +Z/2 is ground entrance (y=0) and -Z/2 is launch lip (y=height)
+  const hw = width / 2;
+  const hl = length / 2;
+  const geom = new THREE.BufferGeometry();
+  const vertices = new Float32Array([
+    // Sloped top deck (2 triangles)
+    -hw, 0, hl,
+    hw, 0, hl,
+    hw, height, -hl,
+    -hw, 0, hl,
+    hw, height, -hl,
+    -hw, height, -hl,
+    // Front vertical face at -hl
+    -hw, 0, -hl,
+    -hw, height, -hl,
+    hw, height, -hl,
+    -hw, 0, -hl,
+    hw, height, -hl,
+    hw, 0, -hl,
+    // Left side triangle
+    -hw, 0, hl,
+    -hw, height, -hl,
+    -hw, 0, -hl,
+    // Right side triangle
+    hw, 0, hl,
+    hw, 0, -hl,
+    hw, height, -hl,
+  ]);
+  geom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+  geom.computeVertexNormals();
+
+  const rampMat = new THREE.MeshStandardMaterial({
+    color: 0x1e293b,
+    roughness: 0.45,
+    metalness: 0.35,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geom, rampMat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  g.add(mesh);
+
+  // Glowing Neon Yellow/Cyan Side Rails & Launch Lip
+  const slopeAngle = Math.atan2(height, length);
+  const slopeLen = Math.hypot(length, height);
+  const neonMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 1.1,
+  });
+  for (const sx of [-hw + 0.2, hw - 0.2]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.25, slopeLen), neonMat);
+    rail.position.set(sx, height / 2 + 0.12, 0);
+    rail.rotation.x = slopeAngle;
+    g.add(rail);
+  }
+
+  return g;
+}
+
