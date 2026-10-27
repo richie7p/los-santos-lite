@@ -1,0 +1,30 @@
+{
+  "name": "los-santos-lite",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "洛聖都行動 Los Santos Lite — GTA V 風格瀏覽器 3D 開放世界槍戰、三主角衛星切換、八格武器輪盤與銀行劫案沙盒",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 8080",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 8080",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "lucide-react": "^0.510.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.1.0",
+    "three": "^0.175.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/three": "^0.175.0",
+    "@vitejs/plugin-react": "^4.4.0",
+    "typescript": "^5.8.2",
+    "vite": "^6.3.0"
+  }
+}
