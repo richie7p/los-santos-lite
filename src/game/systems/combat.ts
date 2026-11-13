@@ -266,6 +266,7 @@ export class Combat {
 
   damageVehicle(v: Vehicle, dmg: number, by: Actor | null) {
     if (v.destroyed) return;
+    if (by) v.lastHitBy = by;
     v.damage(dmg, this.g.vehicleEvents);
     this.g.onVehicleHurt(v, by);
     if (by === this.g.player) this.g.onPlayerHit(null, false);

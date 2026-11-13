@@ -526,7 +526,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
       emissiveIntensity: 0,
     });
     f.map.anisotropy = maxAniso;
-    nightMaterials.push({ mat: m, max: 1.15 });
+    nightMaterials.push({ mat: m, max: 0.75 });
     root.add(mesh(merge(wallGeoms[s]), m, true, true));
   }
   root.add(mesh(merge(roofGeoms), new THREE.MeshStandardMaterial({ map: tex.roof, vertexColors: true, roughness: 0.9 }), true, true));
@@ -662,7 +662,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
 
   const lampMat = new THREE.MeshStandardMaterial({ color: 0x3b4046, roughness: 0.5, metalness: 0.7 });
   const lampHeadMat = new THREE.MeshStandardMaterial({ color: 0xfff3d6, emissive: 0xffd9a0, emissiveIntensity: 0 });
-  nightMaterials.push({ mat: lampHeadMat, max: 6 });
+  nightMaterials.push({ mat: lampHeadMat, max: 2.6 });
   addInstanced(root, lampGeometry(), lampMat, lampMats, true);
   addInstanced(root, new THREE.BoxGeometry(0.7, 0.18, 1.2).translate(0, 7.62, 2.2), lampHeadMat, lampMats, false);
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4e36, roughness: 0.95 });
@@ -903,7 +903,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     if (Math.abs(n - night) < 0.002) return;
     night = n;
     for (const { mat, max } of nightMaterials) mat.emissiveIntensity = Math.max(mat === lampHeadMat ? 0 : 0.02, n * max);
-    poolMat.opacity = smoothstep(0.3, 0.9, n) * 0.6;
+    poolMat.opacity = smoothstep(0.3, 0.9, n) * 0.32;
     if (poolMesh) poolMesh.visible = n > 0.3;
   };
   return { root, water, nightMaterials, animated, lampPositions, update, setNight };

@@ -544,7 +544,8 @@ export class Game {
   }
 
   private onVehicleDestroyed(v: Vehicle) {
-    this.combat.explode(v.x, v.y + 1, v.z, 9, 260, v.isPlayer ? null : this.player);
+    const blame = v.isPlayer ? null : v.lastHitBy;
+    this.combat.explode(v.x, v.y + 1, v.z, 9, 260, blame);
     v.vy = 7;
     v.airborne = true;
     v.airTime = 0;
@@ -556,7 +557,7 @@ export class Game {
     if (v.isPlayer) {
       this.combat.damageActor(this.player, 999, null, null, false, 'explosion');
     }
-    if (v.ai.kind === 'police') this.police.addHeat(Math.max(2, this.police.heat), '炸毀警車');
+    if (v.ai.kind === 'police' && blame === this.player) this.police.addHeat(Math.max(2, this.police.heat), '炸毀警車');
   }
 
   private onPlayerDeath(reason: string) {
@@ -787,7 +788,7 @@ export class Game {
     gu.uDamage.value = Math.max(this.damageFlash, lowHp, ph === 'dead' ? 0.7 : 0);
     gu.uSlowmo.value = lerp(gu.uSlowmo.value, this.focusActive || this.wheelOpen || this.stuntCam ? 1 : 0, damp(6, rawDt));
     gu.uWarm.value = 1 - this.env.night;
-    this.post.bloom.strength = lerp(0.28, 0.85, this.env.night);
+    this.post.bloom.strength = lerp(0.28, 0.6, this.env.night);
     if (!this.skipRender) this.post.render(rawDt, this.scene, this.camera);
   }
 
@@ -1141,6 +1142,7 @@ export class Game {
                   b.damage(dmg * (ma / 1500), this.vehicleEvents);
                   if (a.isPlayer || b.isPlayer) {
                     const other = a.isPlayer ? b : a;
+                    other.lastHitBy = this.player;
                     if (other.ai.kind === 'police' || other.crew === 'police') this.police.addHeat(Math.max(1, this.police.heat), '撞擊警車');
                     if (other.ai.kind === 'traffic' && other.crewCount > 0) other.ai.cruise = 18;
                   }

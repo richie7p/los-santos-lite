@@ -166,7 +166,7 @@ export class Environment {
 
     this.hemi.color.copy(DAY_HEMI_SKY).lerp(NIGHT_HEMI_SKY, this.night);
     this.hemi.groundColor.copy(DAY_HEMI_GROUND).lerp(NIGHT_HEMI_GROUND, this.night);
-    this.hemi.intensity = lerp(0.7, 0.5, this.night);
+    this.hemi.intensity = lerp(0.7, 0.8, this.night);
 
     // regenerate reflections when the sun moved noticeably
     if (Math.abs(elevDeg - this.lastEnvElev) > 3) {

@@ -66,6 +66,8 @@ export class Vehicle {
   crew: 'civilian' | 'police' | 'gang' | 'enemy' | null = null;
   crewCount = 0;
   parkedSlot = -1;
+  /** Who last damaged this vehicle (for blame when it explodes). */
+  lastHitBy: Actor | null = null;
   isPlayer = false;
   siren = false;
   tag = '';
