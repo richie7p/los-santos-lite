@@ -72,7 +72,7 @@ export class PostFX {
   ) {
     this.composer = new EffectComposer(renderer);
     this.composer.addPass(new RenderPass(scene, camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.55, 0.88);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.5, 0.93);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.grade = new ShaderPass(GradeShader);

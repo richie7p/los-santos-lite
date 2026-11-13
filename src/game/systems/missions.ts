@@ -372,7 +372,7 @@ export class Missions {
       if (o.kind === 'ammu' && d < 3 && !p.vehicle) return `按 [E] 進入 ${o.name}`;
       if (o.kind === 'garage' && d < 5 && p.vehicle) return `按 [E] 使用 ${o.name}（維修／烤漆）`;
       if (o.kind === 'safehouse' && d < 3 && !p.vehicle) return '按 [E] 存檔並休息';
-      if (o.kind === 'courier' && d < 4 && !this.run) return '按 [E] 開始快鴿速遞外送工作';
+      if (o.kind === 'courier' && Math.hypot(o.x - px, o.z - pz) < 4 && !this.run && !p.vehicle) return '按 [E] 開始快鴿速遞外送工作';
     }
     if (!this.run) {
       for (const r of RACES) {
@@ -403,7 +403,7 @@ export class Missions {
         g.openShop('safehouse', o.name);
         return true;
       }
-      if (o.kind === 'courier' && d < 4 && !this.run) {
+      if (o.kind === 'courier' && Math.hypot(o.x - px, o.z - pz) < 4 && !this.run && !p.vehicle) {
         this.startActivity(courierJob(g, this));
         return true;
       }
@@ -488,7 +488,7 @@ export class Missions {
     if (!this.stuntWatch || v !== g.player.vehicle) return;
     const idx = this.stuntWatch.ramp;
     this.stuntWatch = null;
-    if (airTime < 1.0) return;
+    if (airTime < 0.6) return;
     const first = !this.stunts.has(idx);
     this.stunts.add(idx);
     const bonus = first ? 1500 : 250;
@@ -827,16 +827,16 @@ function buildStory(g: Game, m: Missions): MissionDef[] {
         let bag: ReturnType<Missions['addPickup']> | null = null;
         return [
           waitStep(3, '聽老韓交代', () => g.setSubtitle('老韓：「他們躲在港口 3 號倉庫。不給錢？那就讓他們知道痛。」', 3)),
-          gotoStep(g, m, '前往【港口 3 號倉庫】', 410, -10, 6),
+          gotoStep(g, m, '前往【港口 3 號倉庫】', 392, -10, 6),
           {
             obj: '教訓紫蛇幫的小弟',
             enter: () => {
               foes = spawnEnemies(g, run, [
-                [398, -22],
-                [402, 6],
-                [418, 14],
-                [392, -6],
-                [425, -26],
+                [404, -24],
+                [406, 4],
+                [408, 22],
+                [404, -8],
+                [409, -38],
               ], ['pistol', 'fist', 'pistol', 'smg', 'fist'], 'enemy', 0.28);
               g.setSubtitle('紫蛇幫小弟：「老韓的人？兄弟們，抄傢伙！」', 3);
             },
@@ -849,8 +849,8 @@ function buildStory(g: Game, m: Missions): MissionDef[] {
           {
             obj: '撿起錢袋',
             enter: () => {
-              bag = m.addPickup('mbag', 'cash', 412, -4, 1200, undefined, 0, true);
-              m.marker.set(412, -4, 1.2);
+              bag = m.addPickup('mbag', 'cash', 406, -4, 1200, undefined, 0, true);
+              m.marker.set(406, -4, 1.2);
             },
             update: () => (bag && !m.pickups.includes(bag) ? 'next' : undefined),
           },

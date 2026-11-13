@@ -241,6 +241,8 @@ export class Vehicle {
         this.airborne = true;
         this.airTime = 0;
         this.maxAir = this.y;
+        // a little extra pop off ramps feels better than strict physics
+        if (this.vy > 2) this.vy *= 1.2;
       } else {
         this.y = lerp(this.y, gAvg, damp(18, dt));
         this.vy = clamp((this.y - prevY) / Math.max(dt, 1e-3), -20, 20);

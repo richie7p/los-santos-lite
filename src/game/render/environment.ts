@@ -39,15 +39,17 @@ export class Environment {
   ) {
     this.sky = new Sky();
     this.sky.scale.setScalar(9000);
+    Environment.addSkyGain(this.sky, this.skyGain);
     const u = this.sky.material.uniforms;
     u.turbidity.value = 2.5;
     u.rayleigh.value = 1.4;
-    u.mieCoefficient.value = 0.004;
-    u.mieDirectionalG.value = 0.8;
+    u.mieCoefficient.value = 0.0025;
+    u.mieDirectionalG.value = 0.86;
     scene.add(this.sky);
 
     this.envSky = new Sky();
     this.envSky.scale.setScalar(9000);
+    Environment.addSkyGain(this.envSky, this.skyGain);
     Object.assign(this.envSky.material.uniforms.turbidity, { value: 4 });
     this.envScene.add(this.envSky);
     this.pmrem = new THREE.PMREMGenerator(renderer);
@@ -91,6 +93,17 @@ export class Environment {
     scene.add(this.stars);
   }
 
+  /** Scales the sky's HDR output so bloom only catches the sun disc. */
+  readonly skyGain = { value: 0.45 };
+  private static addSkyGain(sky: Sky, gain: { value: number }) {
+    const m = sky.material as THREE.ShaderMaterial;
+    m.uniforms.uSkyGain = gain;
+    m.fragmentShader = m.fragmentShader
+      .replace('void main() {', 'uniform float uSkyGain;\nvoid main() {')
+      .replace('gl_FragColor = vec4( retColor, 1.0 );', 'gl_FragColor = vec4( retColor * uSkyGain, 1.0 );');
+    m.needsUpdate = true;
+  }
+
   setShadowQuality(size: number, enabled: boolean) {
     this.sun.castShadow = enabled;
     if (size !== this.shadowSize) {
@@ -111,7 +124,8 @@ export class Environment {
     this.hour = (this.hour + dt / this.secondsPerHour) % 24;
     const e = this.sunElevation; // -1..1
     const elevDeg = e * 62;
-    const az = ((this.hour - 6) / 13) * Math.PI + Math.PI * 0.15;
+    // east at sunrise, south (+Z) at noon, west at sunset
+    const az = Math.PI / 2 - ((this.hour - 6) / 13) * Math.PI;
     const phi = THREE.MathUtils.degToRad(90 - elevDeg);
     this.sunDir.setFromSphericalCoords(1, phi, az);
     this.sky.material.uniforms.sunPosition.value.copy(this.sunDir);
@@ -164,7 +178,7 @@ export class Environment {
       this.envRT = rt;
       this.scene.environment = rt.texture;
     }
-    this.scene.environmentIntensity = lerp(0.65, 0.15, this.night);
+    this.scene.environmentIntensity = lerp(1.0, 0.25, this.night);
   }
 
   dispose() {

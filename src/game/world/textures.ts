@@ -118,10 +118,10 @@ export function grassTexture() {
 export function terrainDetailTexture() {
   const c = canvas(512);
   const ctx = c.getContext('2d')!;
-  noiseFill(ctx, 512, 512, [200, 200, 200], 90, 0.04, 21);
+  noiseFill(ctx, 512, 512, [236, 236, 236], 55, 0.04, 21);
   const r = rng(17);
   for (let k = 0; k < 12000; k++) {
-    const g = 150 + r() * 105;
+    const g = 185 + r() * 70;
     ctx.fillStyle = `rgba(${g},${g},${g},0.3)`;
     ctx.fillRect(r() * 512, r() * 512, 1, 1 + r() * 2);
   }

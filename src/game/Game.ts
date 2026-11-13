@@ -89,7 +89,7 @@ export class Game {
   cash = 500;
   stats = { kills: 0, missions: 0, deaths: 0, distance: 0 };
   godMode = false;
-  difficultyDamage = 1;
+  difficultyDamage = 0.8;
 
   aiming = false;
   private fireCd = 0;
@@ -131,6 +131,7 @@ export class Game {
   private lastDistrict = '';
   private districtT = 0;
   private resizeObs: ResizeObserver | null = null;
+  private skipRender = false;
 
   vehicleEvents: VehicleEvents;
 
@@ -232,6 +233,12 @@ export class Game {
       this.clearSave();
       this.env.hour = 9.5;
       this.missions.startStory();
+      const tips: [number, string][] = [
+        [7000, '提示：按 [F] 上車或下車，按住空白鍵甩尾'],
+        [13000, '提示：按 [M] 開啟地圖，點擊即可設定 GPS 導航點'],
+        [19000, '提示：按住 [Tab] 開啟武器輪盤，按 [Q] 進入子彈時間'],
+      ];
+      for (const [ms, text] of tips) setTimeout(() => !this.disposed && this.toast(text, 'info'), ms);
     }
     this.setPhase('playing');
     this.input.requestLock();
@@ -723,7 +730,7 @@ export class Game {
     }
     const frozen = ph === 'paused' || ph === 'shop' || ph === 'map';
     if (frozen) {
-      if (ph === 'map') this.map.draw(rawDt);
+      this.map.draw(rawDt);
       this.post.render(rawDt, this.scene, this.camera);
       this.syncHud(rawDt, true);
       return;
@@ -781,7 +788,7 @@ export class Game {
     gu.uSlowmo.value = lerp(gu.uSlowmo.value, this.focusActive || this.wheelOpen || this.stuntCam ? 1 : 0, damp(6, rawDt));
     gu.uWarm.value = 1 - this.env.night;
     this.post.bloom.strength = lerp(0.28, 0.85, this.env.night);
-    this.post.render(rawDt, this.scene, this.camera);
+    if (!this.skipRender) this.post.render(rawDt, this.scene, this.camera);
   }
 
   // ================================================================ input
@@ -834,6 +841,10 @@ export class Game {
         this.focusActive = true;
         this.audio.ui('open');
       }
+    }
+    if (inp.wasPressed('Escape') || inp.wasPressed('KeyP')) {
+      this.setPhase('paused');
+      return;
     }
     if (inp.wasPressed('KeyV')) this.camDistMode = (this.camDistMode + 1) % 3;
     if (inp.wasPressed('KeyM')) {
@@ -1634,6 +1645,18 @@ export class Game {
         fps: this.fps,
       }),
       phase: (p: HudState['phase']) => this.setPhase(p),
+      /** Advance the simulation without rendering (for automated tests). */
+      simulate: (seconds: number, step = 1 / 30) => {
+        this.skipRender = true;
+        try {
+          for (let t = 0; t < seconds; t += step) {
+            this.frame(step);
+            this.input.endFrame();
+          }
+        } finally {
+          this.skipRender = false;
+        }
+      },
       game: this,
     };
   }

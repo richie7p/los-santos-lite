@@ -183,10 +183,10 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     const colors = new Float32Array(pos.count * 3);
     const cSand = new THREE.Color(0xe3cf9e);
     const cWetSand = new THREE.Color(0xb59f72);
-    const cGrass = new THREE.Color(0x6f9a4a);
+    const cGrass = new THREE.Color(0x5f8a3e);
     const cDryGrass = new THREE.Color(0xa7a35a);
     const cRock = new THREE.Color(0x8a8378);
-    const cConcrete = new THREE.Color(0xa3a29c);
+    const cConcrete = new THREE.Color(0x85847f);
     const cSea = new THREE.Color(0x4e6f6c);
     const tmp = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
@@ -201,7 +201,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
       const n = (Math.sin(x * 0.05) * Math.cos(z * 0.07) + 1) * 0.5;
       if (x > 372 && Math.abs(z) < 330 && h > 0) tmp.copy(cConcrete);
       else if (h < SEA_LEVEL - 0.2) tmp.copy(cSea);
-      else if (h < 0.6 && (z > 372 || Math.abs(x) > 500 || Math.abs(z) > 500)) tmp.copy(cSand).lerp(cWetSand, smoothstep(0.6, SEA_LEVEL, h));
+      else if (h < 0.6 && (z > 372 || Math.abs(x) > 500 || Math.abs(z) > 500)) tmp.copy(cSand).lerp(cWetSand, smoothstep(0.05, SEA_LEVEL, h));
       else {
         tmp.copy(cGrass).lerp(cDryGrass, x < -380 ? 0.55 + n * 0.3 : n * 0.35);
         tmp.lerp(cRock, smoothstep(0.35, 0.8, slope));
@@ -520,7 +520,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
       roughnessMap: f.orm,
       metalnessMap: f.orm,
       roughness: 1,
-      metalness: isGlass ? 1 : 0.85,
+      metalness: isGlass ? 0.8 : 0.85,
       emissive: 0xffffff,
       emissiveMap: f.emissive,
       emissiveIntensity: 0,
@@ -625,7 +625,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     }
   }
   // countryside trees
-  for (let k = 0; k < 520; k++) {
+  for (let k = 0; k < 1100; k++) {
     const x = (r() - 0.5) * 1300;
     const z = (r() - 0.5) * 1300;
     if (Math.abs(x) < 385 && Math.abs(z) < 385) continue;
