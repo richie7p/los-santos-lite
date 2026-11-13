@@ -1,25 +1,59 @@
-# Los Santos Lite
+# Port Solara Streets · 索拉港街頭
 
 [繁體中文](README.md) | **English**
 
-**Los Santos Lite** — A GTA V-inspired 3D open-world third-person shooter, 3-protagonist satellite switch, and heist action sandbox in the browser.
+A 3D open-world crime action sandbox that runs in the browser. Drive, fight, shake off the police, and rise from street kid to legend of Port Solara.
 
-Switch seamlessly between Michael, Franklin, and Trevor via the iconic 3-stage satellite sky-cam; hold `Tab` to open the 8-slot slow-motion radial weapon wheel; unleash Bullet Time, Driving Focus, and Red Mist rampage abilities; and pull off the Pacific Standard Bank Heist against 5-star SWAT teams and armed police helicopters.
+No install, no login, no external assets. Every model, texture, sound effect and radio track is generated in code at runtime.
 
-## Key Features
+---
 
-- **3-Protagonist Sky-Cam Switch (`[1]` / `[2]` / `[3]`)**:
-  - **Michael De Santa**: *Bullet Time* — slows time by 65%, zero recoil, and 2.5x headshot damage.
-  - **Franklin Clinton**: *Driving Focus* — slows time while driving, doubles cornering grip, and enables drive-by SMG fire.
-  - **Trevor Philips**: *Red Mist* — deals double weapon/explosive damage, takes 85% less damage, and fires without draining the magazine.
-- **8-Slot Radial Weapon Wheel (`[Tab]`)**:
-  - Unarmed Melee, Combat Pistol, Micro SMG (Drive-By capable), Pump Shotgun, Carbine Rifle, Heavy Sniper (8x Optics), RPG Rocket Launcher, and Widowmaker Minigun.
-- **1–5 Star Armed Police, SWAT & Helicopter System**:
-  - Escalates from LSPD patrol cruisers to NOOSE tactical squads and airborne **Police Maverick helicopters** with searchlights and snipers.
-- **3 Replayable Heist Contracts & Interactive Shops**:
-  - *The Pacific Standard Job*, *Elysian Arms Takedown*, and *Simeon Exotic Repo*, plus **Ammu-Nation** and **Los Santos Customs**.
+## Features
 
-## Quick Start
+### Graphics
+- **Day/night cycle**: physical sky, sun/moon lighting with real-time shadows, stars, lit windows, street lamps and neon billboards at night.
+- **Post-processing**: bloom, ACES tone mapping, colour grading, vignette and SMAA. Taking damage or using slow motion adds chromatic aberration and desaturation.
+- **Procedural city**: an 8×8-block city with downtown, residential, industrial and seaside districts, plus a harbour, beach, hills and wind-farm countryside. Building facades are procedurally painted and light up at night.
+- **Vehicles and characters**: extruded-profile car bodies with clear-coat reflections. Characters use an animated skeleton (walk, run, aim, fall).
+- **Particles**: muzzle flashes, tracers, bullet holes, sparks, blood, fireballs, smoke, tyre smoke and skid marks.
+
+### Feel
+- Over-the-shoulder third-person camera, zoom when aiming, first-person sniper scope.
+- Recoil, crosshair bloom, hit and kill markers, camera shake.
+- Arcade driving with weight, handbrake drifts, body roll, ramp jumps, collision damage, fires and explosions.
+- You can shoot a pistol or SMG from a car. Press `Q` for adrenaline slow motion.
+
+### Content
+- **6-chapter story**: homecoming, debt collection, a car theft, a harbour ambush, an armoured-truck heist and a bank job.
+- **1–5 level heat system**: pursuit cars that ram you, officers who get out and surround you, SWAT vans, and a police helicopter with a searchlight that you can shoot down. Break line of sight and leave the search zone to escape.
+- **Side activities**: 3 street races (gold/silver/bronze), courier delivery jobs, 6 stunt jumps, 20 hidden cassette tapes, convenience-store robberies, and armoured trucks that appear at random.
+- **Shops**: gun store (8 weapons, ammo, body armour), Han's Garage (repair; a respray clears heat) and a safehouse (save, sleep).
+- **Living city**: pedestrians who cross the street, lane-following traffic that brakes for obstacles, and civilians who flee from gunfire.
+- **UI**: a rotating radar with GPS routing, a full island map where you click to set a waypoint, a weapon wheel, progress stats and saving.
+- **Audio**: guns, engines, sirens and ambience synthesised with Web Audio, plus two in-car radio stations.
+
+## Controls
+
+| Key | Action |
+| --- | --- |
+| `WASD` | Move / drive |
+| Mouse | Look |
+| LMB / RMB | Shoot / aim |
+| `Shift` | Sprint |
+| `Space` | Jump / handbrake |
+| `F` | Enter, exit or hijack a vehicle |
+| `E` | Interact (shops, missions, races, deliveries) |
+| `R` | Reload |
+| `Tab` (hold) | Weapon wheel (slow motion) |
+| `1`–`8` / wheel | Switch weapon |
+| `Q` | Adrenaline slow motion |
+| `M` | Map (click to set a waypoint) |
+| `V` | Change camera distance |
+| `H` | Horn / police siren |
+| `B` | Change radio station |
+| `Esc` | Pause and settings |
+
+## Quick start
 
 ```bash
 git clone https://github.com/richie7p/los-santos-lite.git
@@ -28,8 +62,8 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:8080](http://localhost:8080) in your browser.
+Open <http://localhost:8080>. A desktop browser with mouse and keyboard works best. If the game stutters, lower the graphics quality in the pause menu.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+MIT License. See [LICENSE](LICENSE). This is an original work; its city, characters and brands are fictional.

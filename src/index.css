@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@theme {
+  --font-display: "Rajdhani", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+}
+
 @layer base {
   * {
     box-sizing: border-box;
@@ -13,23 +17,35 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
-    background: #09090b;
-    font-family:
-      "Inter", "Noto Sans TC", "Microsoft JhengHei", system-ui, -apple-system,
-      sans-serif;
+    background: #0b0f17;
+    font-family: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", system-ui, -apple-system, sans-serif;
+  }
+  button {
+    cursor: pointer;
   }
 }
 
-@keyframes pulse-fast {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.25;
-  }
+.font-display {
+  font-family: var(--font-display);
 }
 
-.animate-wanted {
-  animation: pulse-fast 0.55s ease-in-out infinite;
+@keyframes loadbar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+@keyframes big-in {
+  0% { opacity: 0; transform: scale(1.25); letter-spacing: 0.2em; }
+  100% { opacity: 1; transform: scale(1); }
+}
+.big-in {
+  animation: big-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes toast-in {
+  0% { opacity: 0; transform: translateX(-16px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+.toast-in {
+  animation: toast-in 0.25s ease-out both;
 }
