@@ -12,9 +12,15 @@ export class Input {
   locked = false;
   /** When false, game keys are ignored (menus open). */
   enabled = true;
+  /** Touch device: no pointer lock, input comes from on-screen controls. */
+  readonly touch: boolean;
+  /** Analog stick from the touch joystick (-1..1). */
+  vMoveX = 0;
+  vMoveY = 0;
   onLockChange?: (locked: boolean) => void;
 
   constructor(private el: HTMLElement) {
+    this.touch = isTouchDevice();
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('mousemove', this.onMouseMove);
@@ -40,6 +46,7 @@ export class Input {
   }
 
   requestLock() {
+    if (this.touch) return;
     if (document.pointerLockElement !== this.el) {
       try {
         const p = this.el.requestPointerLock() as unknown as Promise<void> | undefined;
@@ -64,7 +71,32 @@ export class Input {
     return this.released.has(code);
   }
   axis(neg: string, pos: string) {
-    return (this.isDown(pos) ? 1 : 0) - (this.isDown(neg) ? 1 : 0);
+    let v = (this.isDown(pos) ? 1 : 0) - (this.isDown(neg) ? 1 : 0);
+    if (this.enabled) {
+      if (neg === 'KeyA' && pos === 'KeyD') v += this.vMoveX;
+      else if (neg === 'KeyS' && pos === 'KeyW') v += this.vMoveY;
+    }
+    return Math.max(-1, Math.min(1, v));
+  }
+
+  /** Camera look from a touch drag (in mouse-pixel units). */
+  addLook(dx: number, dy: number) {
+    this.mouseDX += dx;
+    this.mouseDY += dy;
+  }
+
+  /** Virtual mouse buttons for touch controls. */
+  setFire(on: boolean) {
+    if (on && !this.lmb) this.lmbPressed = true;
+    this.lmb = on;
+  }
+  setAim(on: boolean) {
+    this.rmb = on;
+  }
+
+  /** Simulate a key from an on-screen button. */
+  setKey(code: string, on: boolean) {
+    this.debugSet(code, on);
   }
 
   /** Call at end of each frame. */
@@ -134,4 +166,10 @@ export class Input {
       this.released.add(code);
     }
   }
+}
+
+export function isTouchDevice() {
+  if (typeof window === 'undefined') return false;
+  const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+  return coarse || (navigator.maxTouchPoints ?? 0) > 1 && !window.matchMedia?.('(pointer: fine)').matches;
 }

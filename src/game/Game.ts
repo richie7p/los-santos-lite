@@ -243,6 +243,13 @@ export class Game {
     this.setPhase('playing');
     this.input.requestLock();
     this.camYaw = this.player.yaw;
+    if (this.input.touch) {
+      // phones: go fullscreen landscape when the browser allows it
+      const de = document.documentElement as HTMLElement & { requestFullscreen?: () => Promise<void> };
+      de.requestFullscreen?.()
+        .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> })?.lock?.('landscape'))
+        .catch(() => {});
+    }
   }
 
   setPhase(p: HudState['phase']) {
@@ -390,7 +397,7 @@ export class Game {
     this.player.setWeapon(w);
   }
 
-  private cycleWeapon(dir: number) {
+  cycleWeapon(dir: number) {
     const owned = WEAPON_ORDER.filter((w) => this.inv[w].owned);
     const i = owned.indexOf(this.player.weapon);
     this.selectWeapon(owned[(i + dir + owned.length) % owned.length]);

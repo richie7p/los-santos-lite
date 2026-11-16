@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { WEAPONS, WEAPON_ORDER } from '../game/data';
 import type { Game } from '../game/Game';
 import { useHud } from '../game/state';
+import { isTouchDevice } from '../game/core/input';
+
+const TOUCH = isTouchDevice();
 
 const fmt = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
 
@@ -17,7 +20,7 @@ function Minimap({ game }: { game: Game }) {
     return () => game.setMapCanvases(null, game.map?.big ?? null);
   }, [game]);
   return (
-    <div className="absolute left-4 bottom-4 w-[232px] sm:w-[260px] select-none">
+    <div className={`absolute select-none ${TOUCH ? 'left-3 bottom-3 w-[150px]' : 'left-4 bottom-4 w-[232px] sm:w-[260px]'}`}>
       <div className="mb-1.5 text-[13px] font-bold tracking-wide text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">{district}</div>
       <div className="relative overflow-hidden rounded-xl border border-white/15 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
         <canvas ref={ref} width={260} height={170} className="block w-full h-auto" />
@@ -73,7 +76,7 @@ function WeaponPanel() {
   const reloading = useHud((s) => s.reloading);
   const spec = WEAPONS[weapon];
   return (
-    <div className="absolute right-4 top-[150px] select-none text-right">
+    <div className={`absolute select-none ${TOUCH ? 'left-1/2 top-12 -translate-x-1/2 scale-[0.8] origin-top text-center' : 'right-4 top-[150px] text-right'}`}>
       <div className="inline-flex items-center gap-3 rounded-xl bg-black/45 backdrop-blur-sm border border-white/10 px-4 py-2">
         <div>
           <div className="text-[11px] tracking-widest text-white/50">WEAPON</div>
@@ -137,7 +140,7 @@ function Subtitle() {
   const sub = useHud((s) => s.subtitle);
   const prompt = useHud((s) => s.prompt);
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-[86px] w-[min(760px,92vw)] flex flex-col items-center gap-2 select-none pointer-events-none">
+    <div className={`absolute left-1/2 -translate-x-1/2 ${TOUCH ? 'bottom-[150px] w-[min(520px,60vw)]' : 'bottom-[86px] w-[min(760px,92vw)]'} flex flex-col items-center gap-2 select-none pointer-events-none`}>
       {sub && <div className="text-center text-[17px] font-bold text-white leading-relaxed [text-shadow:0_2px_4px_#000,0_0_12px_rgba(0,0,0,0.8)]">{sub}</div>}
       {prompt && (
         <div className="rounded-lg bg-black/65 border border-white/15 px-3 py-1.5 text-[14px] font-semibold text-white">
@@ -160,7 +163,7 @@ function BigMessage() {
   const big = useHud((s) => s.big);
   if (!big) return null;
   return (
-    <div key={big.id} className="big-in absolute inset-x-0 top-[24%] flex flex-col items-center select-none pointer-events-none">
+    <div key={big.id} className={`big-in absolute inset-x-0 ${TOUCH ? 'top-[22%] scale-75 origin-top' : 'top-[24%]'} flex flex-col items-center select-none pointer-events-none`}>
       <div className="font-display text-[clamp(36px,6vw,72px)] font-black tracking-wide [text-shadow:0_4px_18px_rgba(0,0,0,0.85)]" style={{ color: big.color ?? '#fff' }}>
         {big.title}
       </div>
@@ -245,7 +248,7 @@ function Speedo() {
   const radio = useHud((s) => s.radio);
   if (!inVehicle) return null;
   return (
-    <div className="absolute right-4 bottom-4 select-none text-right">
+    <div className={`absolute select-none ${TOUCH ? 'left-1/2 -translate-x-1/2 bottom-2 text-center scale-75 origin-bottom' : 'right-4 bottom-4 text-right'}`}>
       <div className="text-[12px] text-white/70 font-semibold">{radio}</div>
       <div className="font-display text-[56px] leading-none font-bold text-white tabular-nums [text-shadow:0_2px_6px_rgba(0,0,0,0.9)]">
         {speed}

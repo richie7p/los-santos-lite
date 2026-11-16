@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Game } from './game/Game';
 import { useHud } from './game/state';
 import { HUD } from './ui/HUD';
+import { RotateHint, TouchControls } from './ui/TouchControls';
 import { ClickToPlay, DeathScreen, LoadingScreen, MapScreen, PauseMenu, ShopPanel, TitleScreen } from './ui/Menus';
 
 declare global {
@@ -51,7 +52,9 @@ export default function App() {
       {game && phase === 'map' && <MapScreen game={game} />}
       {game && phase === 'shop' && <ShopPanel game={game} />}
       {game && phase === 'dead' && <DeathScreen />}
-      {game && phase === 'playing' && <ClickCatcher game={game} />}
+      {game && phase === 'playing' && !game.input.touch && <ClickCatcher game={game} />}
+      {game && phase === 'playing' && game.input.touch && <TouchControls game={game} />}
+      {game && game.input.touch && <RotateHint />}
       {(!game || phase === 'loading') && !error && <LoadingScreen />}
       {error && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black p-8 text-center">

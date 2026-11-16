@@ -89,7 +89,9 @@ export function TitleScreen({ game }: { game: Game }) {
           <Button onClick={() => setShowControls((v) => !v)}>{showControls ? '收起操作說明' : '操作說明'}</Button>
         </div>
         {showControls && <ControlsList />}
-        <div className="mt-6 text-xs text-white/40">建議使用滑鼠與鍵盤遊玩。點擊遊戲畫面以鎖定滑鼠。</div>
+        <div className="mt-6 text-xs text-white/40">
+          {game.input.touch ? '觸控操作：左半邊拖曳移動、右半邊拖曳轉視角，右下角按鈕射擊與互動。建議橫向持握。' : '建議使用滑鼠與鍵盤遊玩。點擊遊戲畫面以鎖定滑鼠。'}
+        </div>
       </div>
     </div>
   );

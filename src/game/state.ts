@@ -1,6 +1,7 @@
 /** UI-facing state (zustand). The engine pushes snapshots ~15x/sec; React reads with selectors. */
 import { create } from 'zustand';
 import type { WeaponId } from './data';
+import { isTouchDevice } from './core/input';
 
 export type Phase = 'title' | 'playing' | 'paused' | 'map' | 'shop' | 'dead' | 'loading';
 export type Quality = 'low' | 'medium' | 'high';
@@ -93,7 +94,8 @@ function loadSettings(): Settings {
   } catch {
     /* storage unavailable */
   }
-  return { ...DEFAULT_SETTINGS };
+  // phones and tablets start on the light preset
+  return { ...DEFAULT_SETTINGS, quality: isTouchDevice() ? 'low' : DEFAULT_SETTINGS.quality };
 }
 
 export function saveSettings(s: Settings) {
