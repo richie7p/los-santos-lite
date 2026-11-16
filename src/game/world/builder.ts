@@ -51,6 +51,7 @@ export interface WorldBuild {
   lampPositions: THREE.Vector3[];
   update(dt: number, time: number): void;
   setNight(n: number): void;
+  setWet(w: number): void;
 }
 
 // ------------------------------------------------------------ geometry helpers
@@ -161,6 +162,9 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
   const nightMaterials: WorldBuild['nightMaterials'] = [];
   const animated: AnimatedProp[] = [];
   const lampPositions: THREE.Vector3[] = [];
+  /** Materials that get glossier and darker when it rains. */
+  const wetMats: { mat: THREE.MeshStandardMaterial; dryR: number; wetR: number; dryC: THREE.Color; dark: number }[] = [];
+  const wet = (mat: THREE.MeshStandardMaterial, wetR: number, dark: number) => wetMats.push({ mat, dryR: mat.roughness, wetR, dryC: mat.color.clone(), dark });
   let poolMesh: THREE.InstancedMesh | null = null;
   const r = rng(4242);
 
@@ -218,6 +222,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (SIZE / 18), uv.getY(i) * (SIZE / 18));
     g.computeVertexNormals();
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, map: tex.detail, roughness: 0.95 });
+    wet(m, 0.7, 0.88);
     const t = mesh(g, m, false, true);
     t.name = 'terrain';
     root.add(t);
@@ -263,6 +268,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
         geoms.push(mkStrip(x, (z0 + z1) / 2, ROAD_W, z1 - z0));
       }
     const m = new THREE.MeshStandardMaterial({ map: tex.asphalt, roughness: 0.92, color: 0xc8c8c8 });
+    wet(m, 0.22, 0.62);
     root.add(mesh(merge(geoms), m, false, true));
 
     // lane markings: dashed centre lines + edge lines + crosswalks
@@ -389,6 +395,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
       polygonOffsetFactor: -1,
       side: THREE.DoubleSide,
     });
+    wet(m, 0.25, 0.62);
     root.add(mesh(merge(geoms), m, false, true));
   }
 
@@ -411,7 +418,9 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
       if (green) grassGeoms.push(pg);
       else plazaGeoms.push(pg);
     }
-    root.add(mesh(merge(swGeoms), new THREE.MeshStandardMaterial({ map: tex.sidewalk, vertexColors: true, roughness: 0.85 }), false, true));
+    const swMat = new THREE.MeshStandardMaterial({ map: tex.sidewalk, vertexColors: true, roughness: 0.85 });
+    wet(swMat, 0.35, 0.72);
+    root.add(mesh(merge(swGeoms), swMat, false, true));
     const lotMatProps = { polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 };
     root.add(mesh(merge(grassGeoms), new THREE.MeshStandardMaterial({ map: tex.grass, roughness: 0.95, ...lotMatProps }), false, true));
     root.add(
@@ -891,6 +900,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
 
   // ---------------------------------------------------------- update hooks
   let night = 0;
+  let wetness = 0;
   const update = (dt: number, time: number) => {
     for (const a of animated) a.obj.rotation[a.axis] += a.speed * dt;
     waterNormal.offset.set(time * 0.004, time * 0.0025);
@@ -903,10 +913,19 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     if (Math.abs(n - night) < 0.002) return;
     night = n;
     for (const { mat, max } of nightMaterials) mat.emissiveIntensity = Math.max(mat === lampHeadMat ? 0 : 0.02, n * max);
-    poolMat.opacity = smoothstep(0.3, 0.9, n) * 0.32;
+    poolMat.opacity = smoothstep(0.3, 0.9, n) * 0.32 * (1 + wetness * 1.3);
     if (poolMesh) poolMesh.visible = n > 0.3;
   };
-  return { root, water, nightMaterials, animated, lampPositions, update, setNight };
+  const setWet = (w: number) => {
+    if (Math.abs(w - wetness) < 0.01) return;
+    wetness = w;
+    poolMat.opacity = smoothstep(0.3, 0.9, night) * 0.32 * (1 + w * 1.3);
+    for (const m of wetMats) {
+      m.mat.roughness = m.dryR + (m.wetR - m.dryR) * w;
+      m.mat.color.copy(m.dryC).multiplyScalar(1 + (m.dark - 1) * w);
+    }
+  };
+  return { root, water, nightMaterials, animated, lampPositions, update, setNight, setWet };
 }
 
 function pickRoof(r: () => number) {

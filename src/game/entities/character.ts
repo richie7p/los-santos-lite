@@ -182,6 +182,8 @@ export class CharacterRig {
   private deadT = 0;
   private punchT = 0;
   private recoilT = 0;
+  private flinchT = 0;
+  private flinchDir = 1;
   private lean = 0;
   private aimBlend = 0;
   private fallDir = 1;
@@ -334,6 +336,12 @@ export class CharacterRig {
     return out.applyMatrix4(this.handR.matrixWorld);
   }
 
+  /** Short hit reaction; dir 1 = hit from the front. */
+  flinch(dir = 1) {
+    this.flinchT = 0.28;
+    this.flinchDir = dir;
+  }
+
   punch() {
     this.punchT = 0.3;
   }
@@ -453,6 +461,13 @@ export class CharacterRig {
       this.punchT -= dt;
     }
     this.recoilT = Math.max(0, this.recoilT - dt);
+    if (this.flinchT > 0) {
+      const f = Math.sin((this.flinchT / 0.28) * Math.PI);
+      this.spine.rotation.x -= f * 0.35 * this.flinchDir;
+      this.neck.rotation.x -= f * 0.3 * this.flinchDir;
+      this.spine.rotation.z = f * 0.12;
+      this.flinchT -= dt;
+    } else this.spine.rotation.z = 0;
     const ak = damp(pose === 'aim' ? 30 : 12, dt);
     this.shL.rotation.x = lerp(this.shL.rotation.x, lx, ak);
     this.shR.rotation.x = lerp(this.shR.rotation.x, rx, ak);

@@ -244,6 +244,7 @@ export class Combat {
     if (a === g.player) {
       g.onPlayerDamaged(d, by);
     }
+    if (dir && a.hp > 0) a.rig.flinch(dir.x * Math.sin(a.yaw) + dir.z * Math.cos(a.yaw) < 0 ? 1 : -1);
     g.onActorHurt(a, by);
     if (a.hp <= 0) {
       a.hp = 0;

@@ -18,6 +18,7 @@ export class AudioEngine {
   private sirenLfo!: OscillatorNode;
   private ambGain!: GainNode;
   private windGain!: GainNode;
+  private rainGain!: GainNode;
   private volume = 0.7;
   private radioOn = false;
   private station = 0;
@@ -120,6 +121,24 @@ export class AudioEngine {
     windBp.frequency.value = 500;
     windBp.Q.value = 0.6;
     wind.connect(windBp).connect(this.windGain).connect(this.master);
+    // rain hiss
+    this.rainGain = ctx.createGain();
+    this.rainGain.gain.value = 0;
+    const rain = this.loopNoise();
+    const rainHp = ctx.createBiquadFilter();
+    rainHp.type = 'highpass';
+    rainHp.frequency.value = 1400;
+    const rainLp = ctx.createBiquadFilter();
+    rainLp.type = 'lowpass';
+    rainLp.frequency.value = 7000;
+    rain.connect(rainHp).connect(rainLp).connect(this.rainGain).connect(this.master);
+  }
+
+  thunder() {
+    if (!this.ctx) return;
+    this.burst({ dur: 3.5, gain: 0.9, type: 'lowpass', freq: 380, freqEnd: 60, attack: 0.15 });
+    this.burst({ dur: 0.6, gain: 0.35, type: 'lowpass', freq: 1200, freqEnd: 200, attack: 0.01 });
+    this.tone(42, 2.5, 0.6, 'sine', 28);
   }
 
   private loopNoise() {
@@ -314,7 +333,7 @@ export class AudioEngine {
   }
 
   /** Called every frame. */
-  update(p: { engine: number; load: number; inCar: boolean; skid: number; siren: number; wind: number; city: number }) {
+  update(p: { engine: number; load: number; inCar: boolean; skid: number; siren: number; wind: number; city: number; rain: number }) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     const rpm = p.engine;
@@ -326,6 +345,7 @@ export class AudioEngine {
     this.sirenGain.gain.setTargetAtTime(clamp(p.siren, 0, 1) * 0.07, t, 0.2);
     this.windGain.gain.setTargetAtTime(clamp(p.wind, 0, 1) * 0.18, t, 0.2);
     this.ambGain.gain.setTargetAtTime(0.03 + p.city * 0.05, t, 0.5);
+    this.rainGain.gain.setTargetAtTime(clamp(p.rain, 0, 1) * (p.inCar ? 0.16 : 0.1), t, 0.5);
   }
 
   // ---------------------------------------------------------------- radio

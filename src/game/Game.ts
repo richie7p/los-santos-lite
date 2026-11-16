@@ -132,6 +132,7 @@ export class Game {
   private districtT = 0;
   private resizeObs: ResizeObserver | null = null;
   private skipRender = false;
+  private wetness = 0;
 
   vehicleEvents: VehicleEvents;
 
@@ -181,6 +182,7 @@ export class Game {
   init() {
     const s = useHud.getState().settings;
     this.env = new Environment(this.scene, this.renderer);
+    this.env.onThunder = (delay) => setTimeout(() => !this.disposed && this.audio.thunder(), delay * 1000);
     this.world3d = buildWorld(this.scene, this.world, this.renderer.capabilities.getMaxAnisotropy());
     this.fx = new FX(this.scene);
     this.combat = new Combat(this);
@@ -782,6 +784,11 @@ export class Game {
     this.env.update(dt, this.focus);
     this.world3d.update(dt, performance.now() / 1000);
     this.world3d.setNight(this.env.night);
+    // roads get wet quickly and dry slowly
+    const rain = this.env.rain;
+    this.wetness += (rain - this.wetness) * Math.min(1, dt * (rain > this.wetness ? 0.12 : 0.02));
+    this.world3d.setWet(this.wetness);
+    for (const v of this.vehicles) v.gripMul = 1 - this.wetness * 0.18;
     this.fx.update(dt);
     this.updateHeadlight();
     this.updateCamera(rawDt);
@@ -1324,6 +1331,7 @@ export class Game {
       siren,
       wind: v ? speed / 50 : this.player.y > 20 ? 0.4 : 0,
       city: Math.abs(this.focus.x) < 370 && Math.abs(this.focus.z) < 370 ? 1 : 0.2,
+      rain: this.env.rain,
     });
   }
 
@@ -1385,7 +1393,7 @@ export class Game {
       spread: this.currentSpread(),
       aiming: this.aiming,
       scoped,
-      clock: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`,
+      clock: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}${this.env.rain > 0.6 ? '　暴雨' : this.env.rain > 0.15 ? '　小雨' : ''}`,
       district: DISTRICT_NAMES[this.lastDistrict] ?? '',
       damage: this.damageFlash,
       fps: this.fps,
@@ -1612,6 +1620,10 @@ export class Game {
       },
       key: (code: string, on: boolean) => this.input.debugSet(code, on),
       setHour: (h: number) => (this.env.hour = h),
+      setWeather: (r: number) => {
+        this.env.setWeather(r, true);
+        this.wetness = r;
+      },
       give: (w: WeaponId) => this.giveWeapon(w, 200),
       heat: (n: number) => this.police.addHeat(n, 'debug'),
       god: (on: boolean) => (this.godMode = on),

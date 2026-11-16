@@ -11,7 +11,7 @@ No install, no login, no external assets. Every model, texture, sound effect and
 ## Features
 
 ### Graphics
-- **Day/night cycle**: physical sky, sun/moon lighting with real-time shadows, stars, lit windows, street lamps and neon billboards at night.
+- **Day/night cycle and weather**: physical sky, sun/moon lighting with real-time shadows, stars, lit windows, street lamps and neon billboards at night. Random rain makes roads wet and reflective and the sky overcast; storms bring lightning and thunder, and wet roads reduce grip.
 - **Post-processing**: bloom, ACES tone mapping, colour grading, vignette and SMAA. Taking damage or using slow motion adds chromatic aberration and desaturation.
 - **Procedural city**: an 8×8-block city with downtown, residential, industrial and seaside districts, plus a harbour, beach, hills and wind-farm countryside. Building facades are procedurally painted and light up at night.
 - **Vehicles and characters**: extruded-profile car bodies with clear-coat reflections. Characters use an animated skeleton (walk, run, aim, fall).
@@ -22,6 +22,8 @@ No install, no login, no external assets. Every model, texture, sound effect and
 - Recoil, crosshair bloom, hit and kill markers, camera shake.
 - Arcade driving with weight, handbrake drifts, body roll, ramp jumps, collision damage, fires and explosions.
 - You can shoot a pistol or SMG from a car. Press `Q` for adrenaline slow motion.
+- Characters react when they are shot.
+- **Phones and tablets**: a floating joystick on the left, drag on the right to look, and on-screen buttons to shoot, aim, jump and enter vehicles (play in landscape).
 
 ### Content
 - **6-chapter story**: homecoming, debt collection, a car theft, a harbour ambush, an armoured-truck heist and a bank job.
@@ -62,7 +64,7 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:8080>. A desktop browser with mouse and keyboard works best. If the game stutters, lower the graphics quality in the pause menu.
+Open <http://localhost:8080>. Run `npm test` for the automated tests; `npm run build` type-checks, tests and bundles into `dist/`. A desktop browser with mouse and keyboard works best. If the game stutters, lower the graphics quality in the pause menu.
 
 ## License
 

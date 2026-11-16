@@ -84,6 +84,8 @@ export class Vehicle {
   lateralSlip = 0;
   blip: 'target' | 'ally' | 'enemy' | null = null;
   damageScale = 1;
+  /** Road grip multiplier (lower when wet). */
+  gripMul = 1;
   headlightsOn = false;
   color: number;
 
@@ -184,7 +186,7 @@ export class Vehicle {
       if (hand) vF -= Math.sign(vF) * Math.min(Math.abs(vF), 7 * dt);
 
       // lateral grip
-      const gripK = hand ? s.grip * 0.18 : s.grip * (Math.abs(vR) > 6 ? 0.55 : 1);
+      const gripK = (hand ? s.grip * 0.18 : s.grip * (Math.abs(vR) > 6 ? 0.55 : 1)) * this.gripMul;
       vR *= Math.exp(-gripK * dt);
       this.lateralSlip = vR;
 
