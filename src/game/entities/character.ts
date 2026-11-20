@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { clamp, damp, lerp, pick } from '../core/math';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { WeaponId } from '../data';
+import { bodyMat, buildBody, type BodyGeometry } from './characterMesh';
 
 // ---- faces: eyes, brows, nose and mouth merged into one vertex-coloured mesh
 const faceMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 });
@@ -41,11 +42,25 @@ export interface Outfit {
   pants: number;
   shoes: number;
   hair: number;
-  hairStyle: 'short' | 'cap' | 'bald' | 'long' | 'bun';
+  hairStyle: 'short' | 'cap' | 'bald' | 'long' | 'bun' | 'buzz' | 'ponytail';
   capColor?: number;
   jacket?: number;
   vest?: boolean;
   bandana?: number;
+  /** Body & clothing variety (all optional). */
+  fem?: boolean;
+  build?: number;
+  height?: number;
+  sleeves?: 'short' | 'long';
+  legwear?: 'pants' | 'shorts' | 'skirt';
+  print?: number;
+  eyes?: number;
+  beard?: boolean;
+  glasses?: boolean;
+  watch?: boolean;
+  chain?: boolean;
+  backpack?: number;
+  badge?: boolean;
 }
 
 const matCache = new Map<string, THREE.MeshStandardMaterial>();
@@ -150,15 +165,28 @@ const PANTS = [0x2c3e50, 0x1b2631, 0x5d6d7e, 0x7e5109, 0x212f3d, 0x4a235a, 0xb3b
 const SHOES = [0x111111, 0x5d4037, 0xeeeeee, 0x1b2631, 0x7b241c];
 
 export function randomOutfit(): Outfit {
+  const fem = Math.random() < 0.45;
+  const warm = Math.random() < 0.55;
   return {
+    fem,
     skin: pick(SKIN_TONES),
     shirt: pick(SHIRTS),
-    pants: pick(PANTS),
+    pants: pick(fem ? [...PANTS, 0x8e2c48, 0x1f4e79, 0xd9c7a7] : PANTS),
     shoes: pick(SHOES),
     hair: pick(HAIR_COLORS),
-    hairStyle: pick(['short', 'short', 'cap', 'bald', 'long', 'bun'] as const),
+    hairStyle: fem ? pick(['long', 'long', 'bun', 'ponytail', 'short'] as const) : pick(['short', 'short', 'buzz', 'cap', 'bald', 'short'] as const),
     capColor: pick(SHIRTS),
-    jacket: Math.random() < 0.3 ? pick([0x1c1c1c, 0x5b3a29, 0x2e4053, 0x7d6608]) : undefined,
+    jacket: Math.random() < 0.28 ? pick([0x1c1c1c, 0x5b3a29, 0x2e4053, 0x7d6608, 0x4a5a3a]) : undefined,
+    build: 0.88 + Math.random() * 0.3,
+    height: (fem ? 0.93 : 0.98) + Math.random() * 0.08,
+    sleeves: warm ? 'short' : 'long',
+    legwear: fem ? pick(['pants', 'skirt', 'shorts', 'pants'] as const) : warm && Math.random() < 0.3 ? 'shorts' : 'pants',
+    print: Math.random() < 0.4 ? pick(SHIRTS) : undefined,
+    eyes: pick([0x3b2a1d, 0x2a4a6a, 0x3d5a2a, 0x1b1b1b]),
+    beard: !fem && Math.random() < 0.22,
+    glasses: Math.random() < 0.18,
+    watch: Math.random() < 0.4,
+    backpack: Math.random() < 0.12 ? pick([0x1d4ed8, 0x111111, 0xc0392b, 0x2a9d8f]) : undefined,
   };
 }
 export function policeOutfit(swat = false): Outfit {
@@ -170,7 +198,11 @@ export function policeOutfit(swat = false): Outfit {
     hair: 0x1b1b1b,
     hairStyle: 'cap',
     capColor: swat ? 0x111111 : 0x14213d,
-    vest: true,
+    vest: swat,
+    badge: true,
+    sleeves: swat ? 'long' : 'short',
+    watch: true,
+    build: 1.02 + Math.random() * 0.12,
   };
 }
 export function gangOutfit(): Outfit {
@@ -184,10 +216,15 @@ export function gangOutfit(): Outfit {
     capColor: 0x6c3483,
     bandana: 0x8e44ad,
     jacket: Math.random() < 0.5 ? 0x111111 : undefined,
+    chain: Math.random() < 0.6,
+    beard: Math.random() < 0.3,
+    glasses: Math.random() < 0.25,
+    build: 0.95 + Math.random() * 0.25,
+    sleeves: 'short',
   };
 }
 export function playerOutfit(): Outfit {
-  return { skin: 0xd9a066, shirt: 0xf2f2f2, pants: 0x2b3a4a, shoes: 0x3a2a1e, hair: 0x1b1b1b, hairStyle: 'short', jacket: 0x23303d };
+  return { skin: 0xd9a066, shirt: 0xf2f2f2, pants: 0x2b3a4a, shoes: 0x3a2a1e, hair: 0x1b1b1b, hairStyle: 'short', jacket: 0x23303d, watch: true, build: 1.04, beard: true, eyes: 0x2a1d14 };
 }
 
 export type Pose = 'idle' | 'move' | 'aim' | 'dead' | 'handsUp' | 'cower' | 'fall';
@@ -220,113 +257,47 @@ export class CharacterRig {
   private aimBlend = 0;
   private fallDir = 1;
 
+  private body: BodyGeometry;
+
   constructor(public outfit: Outfit) {
     const o = outfit;
-    const skin = mat(o.skin, 0.7);
-    const shirt = mat(o.jacket ?? o.shirt, 0.85);
-    const inner = mat(o.shirt, 0.85);
-    const pants = mat(o.pants, 0.9);
-    const shoes = mat(o.shoes, 0.6);
-    const hair = mat(o.hair, 0.9);
+    const body = buildBody(o);
+    this.body = body;
+    this.root.scale.setScalar(o.height ?? 1);
 
     this.root.add(this.pose);
     this.pose.add(this.hips);
     this.hips.position.y = 0.98;
-    const pelvis = this.m(G.pelvis, pants);
-    pelvis.rotation.z = Math.PI / 2;
-    pelvis.scale.set(1, 1.05, 0.85);
-    pelvis.position.y = 0.0;
-    this.hips.add(pelvis);
-
+    this.hips.add(this.m(body.pelvis, bodyMat));
     this.hips.add(this.spine);
-    const torso = this.m(G.torso, shirt);
-    torso.position.y = 0.3;
-    torso.scale.set(1.28, 1, 0.78);
-    this.spine.add(torso);
-    if (o.jacket) {
-      // shirt visible at the front
-      const front = this.m(G.front, inner);
-      front.position.set(0, 0.32, 0.127);
-      this.spine.add(front);
-    }
-    if (o.vest) {
-      const v = this.m(G.vest, mat(0x2b2b2b, 0.7));
-      v.position.set(0, 0.32, 0);
-      this.spine.add(v);
-    }
-
+    this.spine.add(this.m(body.torso, bodyMat));
     this.spine.add(this.neck);
-    this.neck.position.y = 0.56;
-    const neckM = this.m(G.neck, skin);
-    neckM.position.y = 0.02;
-    this.neck.add(neckM);
+    this.neck.position.y = 0.55;
+    this.neck.add(this.m(body.neck, bodyMat));
     this.neck.add(this.head);
-    this.head.position.y = 0.15;
-    const headM = this.m(G.head, skin);
-    headM.scale.set(0.95, 1.08, 1);
-    this.head.add(headM);
-    const face = new THREE.Mesh(faceGeometry(o.skin, o.hair), faceMat);
-    this.head.add(face);
-    if (o.hairStyle === 'short' || o.hairStyle === 'bun') {
-      const h = this.m(G.hairShort, hair);
-      h.position.y = 0.012;
-      h.rotation.x = -0.25;
-      this.head.add(h);
-      if (o.hairStyle === 'bun') {
-        const b = this.m(G.bun, hair);
-        b.position.set(0, 0.1, -0.09);
-        this.head.add(b);
-      }
-    } else if (o.hairStyle === 'long') {
-      const h = this.m(G.hairLong, hair);
-      h.position.set(0, -0.005, -0.015);
-      h.rotation.x = -0.35;
-      this.head.add(h);
-    } else if (o.hairStyle === 'cap') {
-      const cm = mat(o.capColor ?? 0x222222, 0.8);
-      const c = this.m(G.capTop, cm);
-      c.position.y = 0.025;
-      this.head.add(c);
-      const brim = this.m(G.capBrim, cm);
-      brim.position.set(0, 0.035, 0.03);
-      this.head.add(brim);
-    }
-    if (o.bandana) {
-      const b = this.m(G.bandana, mat(o.bandana, 0.9));
-      b.position.y = -0.055;
-      b.scale.set(1, 1, 1.02);
-      this.head.add(b);
-    }
+    this.head.position.y = 0.16;
+    this.head.add(this.m(body.head, bodyMat));
 
     const arm = (sh: THREE.Group, el: THREE.Group, side: number) => {
-      sh.position.set(side * 0.235, 0.5, 0);
+      sh.position.set(side * body.shoulderX, 0.49, 0);
       this.spine.add(sh);
-      const ua = this.m(G.upperArm, shirt);
-      sh.add(ua);
+      sh.add(this.m(side > 0 ? body.upperArmL : body.upperArmR, bodyMat));
       el.position.y = -0.28;
       sh.add(el);
-      const fa = this.m(G.foreArm, o.jacket ? shirt : skin);
-      el.add(fa);
-      const hand = this.m(G.hand, skin);
-      hand.position.y = -0.27;
-      el.add(hand);
-      return hand;
+      el.add(this.m(side > 0 ? body.foreArmL : body.foreArmR, bodyMat));
     };
     arm(this.shL, this.elL, 1);
     arm(this.shR, this.elR, -1);
-    this.handR.position.set(0, -0.28, 0.02);
+    this.handR.position.set(0, -0.3, 0.02);
     this.elR.add(this.handR);
 
     const leg = (hp: THREE.Group, kn: THREE.Group, side: number) => {
-      hp.position.set(side * 0.095, -0.03, 0);
+      hp.position.set(side * body.hipX, -0.03, 0);
       this.hips.add(hp);
-      hp.add(this.m(G.thigh, pants));
+      hp.add(this.m(body.thigh, bodyMat));
       kn.position.y = -0.44;
       hp.add(kn);
-      kn.add(this.m(G.shin, pants));
-      const f = this.m(G.foot, shoes);
-      f.position.y = -0.44;
-      kn.add(f);
+      kn.add(this.m(body.shin, bodyMat));
     };
     leg(this.hipL, this.knL, 1);
     leg(this.hipR, this.knR, -1);
@@ -522,5 +493,7 @@ export class CharacterRig {
 
   dispose() {
     this.root.removeFromParent();
+    const b = this.body;
+    for (const g of [b.pelvis, b.torso, b.neck, b.head, b.upperArmL, b.upperArmR, b.foreArmL, b.foreArmR, b.thigh, b.shin]) g.dispose();
   }
 }

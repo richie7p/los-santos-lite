@@ -365,6 +365,123 @@ export function buildDetails(ctx: DetailCtx) {
     });
   }
 
+  // ======================================================== ARCHITECTURE
+  {
+    const ledgeParts: THREE.BufferGeometry[] = [];
+    const crownParts: THREE.BufferGeometry[] = [];
+    const ring = (out: THREE.BufferGeometry[], cx: number, cz: number, w: number, d: number, y: number, h: number, o: number, color: number) => {
+      // four slabs around a footprint, protruding by `o`
+      out.push(paint(box(w + o * 2, h, o, cx, y, cz + d / 2 + o / 2), color));
+      out.push(paint(box(w + o * 2, h, o, cx, y, cz - d / 2 - o / 2), color));
+      out.push(paint(box(o, h, d, cx + w / 2 + o / 2, y, cz), color));
+      out.push(paint(box(o, h, d, cx - w / 2 - o / 2, y, cz), color));
+    };
+    const balcony = I(parts([[box(2.6, 0.12, 1.2, 0, 0, 0.6), 0xd8d3c8], [box(2.6, 0.9, 0.05, 0, 0.5, 1.18), 0x7f8a94], [box(0.05, 0.9, 1.2, -1.28, 0.5, 0.6), 0x7f8a94], [box(0.05, 0.9, 1.2, 1.28, 0.5, 0.6), 0x7f8a94]]), vcMetal);
+    const penthouse = I(parts([[box(1, 1, 1, 0, 0.5, 0), 0xbfbab0], [box(1.06, 0.08, 1.06, 0, 1.0, 0), 0x8f8a80]]));
+    const dish = I(parts([[cyl(0.04, 0.04, 0.8, 5, 0, 0.4), 0x888888], [new THREE.SphereGeometry(0.55, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.35).rotateX(-1.1).translate(0, 0.9, 0.1), 0xe6e6e6]]), vcMetal);
+    const mast = I(parts([[cyl(0.06, 0.1, 9, 6, 0, 4.5), 0x9aa0a6], [box(1.2, 0.06, 0.06, 0, 6, 0), 0x9aa0a6], [box(0.8, 0.06, 0.06, 0, 7.5, 0), 0x9aa0a6]]), vcMetal);
+    const chimney = I(parts([[box(0.8, 2.2, 0.8, 0, 1.1, 0), 0x8f4a3a], [box(1.0, 0.15, 1.0, 0, 2.25, 0), 0x6b3a2e]]));
+    const solar = I(parts([[box(1.8, 0.05, 1.1, 0, 0, 0).rotateX(-0.45), 0x1c2b4a], [box(1.82, 0.02, 0.04, 0, 0.02, 0).rotateX(-0.45), 0xb0b8c0]]), vcMetal);
+    const porchG = I(parts([[box(4.2, 0.2, 2.2, 0, 0.1, 1.1), 0xcfc8bb], [box(4.4, 0.12, 2.4, 0, 2.7, 1.2), 0x7a4b36], [cyl(0.07, 0.07, 2.6, 6, -1.9, 1.35, 2.1), 0xf2efe8], [cyl(0.07, 0.07, 2.6, 6, 1.9, 1.35, 2.1), 0xf2efe8], [box(1.4, 0.18, 0.4, 0, 0.09, 2.4), 0xbab3a6]]));
+    const garage = I(parts([[box(3.2, 2.3, 0.06, 0, 1.15, 0), 0xe6e1d6], ...[0.5, 1.0, 1.5, 2.0].map((y): [THREE.BufferGeometry, number] => [box(3.2, 0.03, 0.07, 0, y, 0.005), 0xb9b3a7])]));
+    const crownLightMat = emissive(0x9ee7ff, 1.6);
+    for (const b of BUILDINGS) {
+      const base = buildingBase(b);
+      const tint = new THREE.Color(b.tint);
+      const ledgeCol = tint.clone().lerp(new THREE.Color(0xffffff), 0.35).getHex();
+      if (b.style === 'house') {
+        const top = base + b.h;
+        chimney.add(b.cx + b.w * 0.3, top + 0.4, b.cz - b.d * 0.15);
+        if (r() < 0.35) solar.add(b.cx - b.w * 0.15, top + 1.2, b.cz + b.d * 0.22, 0, 1, 1, 1);
+        // porch & garage on the street side (city houses face the nearest block edge)
+        const blk = BLOCKS.find((bl) => Math.abs(bl.cx - b.cx) < PITCH / 2 && Math.abs(bl.cz - b.cz) < PITCH / 2);
+        let yaw = 0;
+        if (blk) {
+          const dx = b.cx - blk.cx;
+          const dz = b.cz - blk.cz;
+          yaw = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? Math.PI / 2 : -Math.PI / 2) : dz > 0 ? 0 : Math.PI;
+        }
+        const fx = Math.sin(yaw);
+        const fz = Math.cos(yaw);
+        const half = Math.abs(fx) > 0.5 ? b.w / 2 : b.d / 2;
+        const side = Math.abs(fx) > 0.5 ? b.d : b.w;
+        porchG.add(b.cx + fx * half + -fz * side * 0.18, base, b.cz + fz * half + fx * side * 0.18, yaw);
+        if (r() < 0.5) garage.add(b.cx + fx * (half + 0.03) - -fz * side * 0.25, base, b.cz + fz * (half + 0.03) - fx * side * 0.25, yaw);
+        continue;
+      }
+      if (b.style === 'warehouse' || b.h < 8) continue;
+      // horizontal ledges every few floors and a heavier crown cornice
+      const step = b.style === 'glass' ? 14 : b.style === 'brick' ? 12 : 10.5;
+      const masses = b.style === 'glass' && b.h > 70 ? [{ w: b.w, d: b.d, y0: base, h: b.h * 0.72 }, { w: b.w * 0.74, d: b.d * 0.74, y0: base + b.h * 0.72 + 0.6, h: b.h * 0.28 - 0.6 }] : [{ w: b.w, d: b.d, y0: base, h: b.h }];
+      for (const m of masses) {
+        for (let y = m.y0 + step; y < m.y0 + m.h - 2; y += step) ring(ledgeParts, b.cx, b.cz, m.w, m.d, y, b.style === 'glass' ? 0.18 : 0.3, b.style === 'glass' ? 0.12 : 0.22, ledgeCol);
+        ring(crownParts, b.cx, b.cz, m.w, m.d, m.y0 + m.h - 0.2, 0.7, 0.35, tint.clone().multiplyScalar(0.8).getHex());
+      }
+      const roofY = base + b.h + 0.6;
+      // apartment balconies on the two long facades
+      if (b.style === 'apartment') {
+        const alongX = b.w >= b.d;
+        const len = alongX ? b.w : b.d;
+        const n = Math.floor((len - 2) / 4);
+        for (let y = base + 6.2; y < base + b.h - 2.5; y += 3) {
+          for (let k = 0; k < n; k++) {
+            if (r() < 0.3) continue;
+            const t = -len / 2 + 2 + (k + 0.5) * ((len - 4) / n);
+            for (const sgn of [-1, 1]) {
+              if (alongX) balcony.add(b.cx + t, y, b.cz + sgn * (b.d / 2), sgn > 0 ? 0 : Math.PI);
+              else balcony.add(b.cx + sgn * (b.w / 2), y, b.cz + t, sgn > 0 ? Math.PI / 2 : -Math.PI / 2);
+            }
+          }
+        }
+      }
+      // rooftop machinery
+      if (b.h > 24 && b.roofProps) {
+        const top = b.style === 'glass' && b.h > 70 ? base + b.h + 0.6 : roofY;
+        const scaleW = b.style === 'glass' && b.h > 70 ? 0.74 : 1;
+        penthouse.add(b.cx - b.w * 0.18 * scaleW, top, b.cz + b.d * 0.15 * scaleW, 0, Math.min(8, b.w * 0.3), 4, Math.min(7, b.d * 0.28));
+        if (r() < 0.6) dish.add(b.cx + b.w * 0.3 * scaleW, top, b.cz - b.d * 0.3 * scaleW, r() * 6.28);
+        if (r() < 0.4 && b.h < 70) mast.add(b.cx + b.w * 0.32, top, b.cz + b.d * 0.32);
+      }
+      // glowing crown on tall glass towers
+      if (b.style === 'glass' && b.h > 55) {
+        const w = b.h > 70 ? b.w * 0.74 : b.w;
+        const d = b.h > 70 ? b.d * 0.74 : b.d;
+        const g: THREE.BufferGeometry[] = [];
+        ring(g, b.cx, b.cz, w, d, base + b.h + 0.15, 0.25, 0.4, 0xffffff);
+        const me = new THREE.Mesh(mergeGeometries(g)!, crownLightMat);
+        group.add(me);
+      }
+    }
+    const lm = new THREE.Mesh(mergeGeometries(ledgeParts)!, vcMat);
+    lm.castShadow = lm.receiveShadow = true;
+    group.add(lm);
+    const cm = new THREE.Mesh(mergeGeometries(crownParts)!, vcMat);
+    cm.castShadow = cm.receiveShadow = true;
+    group.add(cm);
+  }
+
+  // downtown street trees with iron grates
+  {
+    const sTree = I(parts([[cyl(0.11, 0.16, 3.2, 6, 0, 1.6), 0x5e4630], [new THREE.IcosahedronGeometry(1.5, 1).scale(1, 1.15, 1).translate(0, 4.1, 0), 0x4e7f39], [new THREE.IcosahedronGeometry(1.1, 1).translate(0.6, 3.5, 0.3), 0x5a8c41]]));
+    const grate = I(new THREE.BoxGeometry(1.4, 0.04, 1.4), new THREE.MeshStandardMaterial({ color: 0x2b2b2b, metalness: 0.7, roughness: 0.5 }), false);
+    for (const b of BLOCKS) {
+      if (b.district !== 'downtown' && b.district !== 'commercial') continue;
+      if (b.special === 'park' || b.special === 'plaza') continue;
+      for (let side = 0; side < 4; side++) {
+        const yaw = [Math.PI, Math.PI / 2, 0, -Math.PI / 2][side];
+        const out = { x: Math.sin(yaw), z: Math.cos(yaw) };
+        for (const t of [0.12, 0.88]) {
+          const p = sidewalkPointOnBlock(b, side, t);
+          const x = p.x + out.x * 1.3;
+          const z = p.z + out.z * 1.3;
+          sTree.add(x, CURB_H, z, r() * 6.28, 0.9 + r() * 0.3);
+          grate.add(x, CURB_H + 0.02, z);
+          col.addBox(x, z, 0.4, 0.4, 0, 4, 'wood');
+        }
+      }
+    }
+  }
+
   // kerbside furniture on every block
   for (const b of BLOCKS) {
     const e = SIDEWALK_RING + 1.4; // near the kerb
