@@ -9,7 +9,7 @@ import type { Vehicle } from './vehicle';
 
 export type Team = 'player' | 'civilian' | 'police' | 'gang' | 'enemy' | 'ally';
 
-export type AIMode = 'wander' | 'cross' | 'flee' | 'cower' | 'chase' | 'attack' | 'guard' | 'idle' | 'follow' | 'drive' | 'handsUp';
+export type AIMode = 'wander' | 'cross' | 'flee' | 'cower' | 'chase' | 'attack' | 'guard' | 'idle' | 'follow' | 'drive' | 'handsUp' | 'roam';
 
 export interface AIState {
   mode: AIMode;
@@ -32,6 +32,8 @@ export interface AIState {
   lastSeenX: number;
   lastSeenZ: number;
   losT: number;
+  /** >0: pedestrian roams around (homeX, homeZ) instead of using city sidewalks. */
+  roamR: number;
 }
 
 let NEXT_ID = 1;
@@ -96,6 +98,7 @@ export class Actor {
       lastSeenX: 0,
       lastSeenZ: 0,
       losT: 0,
+      roamR: 0,
     };
   }
 
@@ -155,8 +158,8 @@ export class Actor {
     let nx = this.x + this.vx * dt;
     let nz = this.z + this.vz * dt;
     // world bounds
-    nx = clamp(nx, -740, 740);
-    nz = clamp(nz, -740, 740);
+    nx = clamp(nx, -1990, 1990);
+    nz = clamp(nz, -1990, 1990);
     const res = world.resolveCircle(nx, nz, this.radius, this.y + 0.3, 1.5);
     if (res.hit) {
       // remove velocity into the wall

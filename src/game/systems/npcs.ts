@@ -4,7 +4,17 @@ import { angleDiff, clamp, damp, lerpAngle, pick, rand } from '../core/math';
 import { WEAPONS } from '../data';
 import { Actor } from '../entities/actor';
 import { randomOutfit } from '../entities/character';
-import { BLOCKS, GRID_N, PITCH, SIDEWALK_RING, sidewalkPointOnBlock, type BlockInfo } from '../world/layout';
+import { BLOCKS, GRID_N, PITCH, SIDEWALK_RING, sidewalkPointOnBlock, groundHeight, SEA_LEVEL, type BlockInfo } from '../world/layout';
+
+/** Places outside the city grid where people hang around. */
+const HUBS: { x: number; z: number; r: number; n: number }[] = [
+  { x: -1250, z: -100, r: 120, n: 10 },
+  { x: -1100, z: 712, r: 70, n: 8 },
+  { x: 0, z: 440, r: 260, n: 12 },
+  { x: 520, z: -990, r: 40, n: 4 },
+  { x: 30, z: -650, r: 35, n: 4 },
+  { x: 480, z: 0, r: 120, n: 5 },
+];
 import type { Game } from '../Game';
 
 const tmpFrom = new THREE.Vector3();
@@ -72,6 +82,30 @@ export class NPCs {
 
   private spawnPed() {
     const g = this.g;
+    // people around hubs outside the grid
+    for (const h of HUBS) {
+      if (Math.hypot(h.x - g.focus.x, h.z - g.focus.z) > 260) continue;
+      let n = 0;
+      for (const a of g.actors) if (a.ai.roamR > 0 && a.ai.homeX === h.x && a.ai.homeZ === h.z && !a.dead) n++;
+      if (n >= h.n) continue;
+      const ang = Math.random() * Math.PI * 2;
+      const x = h.x + Math.sin(ang) * Math.random() * h.r;
+      const z = h.z + Math.cos(ang) * Math.random() * h.r;
+      if (groundHeight(x, z) < SEA_LEVEL + 0.3) continue;
+      const fd = Math.hypot(x - g.focus.x, z - g.focus.z);
+      if (fd < 35 || fd > 150) continue;
+      const res = g.world.resolveCircle(x, z, 0.5, groundHeight(x, z), 1.5);
+      const a = g.spawnActor('civilian', randomOutfit(), res.x, res.z);
+      a.ai.mode = 'roam';
+      a.ai.roamR = h.r;
+      a.ai.homeX = h.x;
+      a.ai.homeZ = h.z;
+      a.ai.tx = res.x;
+      a.ai.tz = res.z;
+      a.ai.speed = rand(1.1, 1.6);
+      a.hp = a.maxHp = 60;
+      return;
+    }
     for (let attempt = 0; attempt < 5; attempt++) {
       const ang = Math.random() * Math.PI * 2;
       const r = rand(45, 130);
@@ -135,8 +169,28 @@ export class NPCs {
       case 'idle':
         a.move(dt, g.world, 0, 0, 20, false);
         a.pose = 'idle';
-        if (ai.timer <= 0) ai.mode = 'wander';
+        if (ai.timer <= 0) ai.mode = ai.roamR > 0 ? 'roam' : 'wander';
         break;
+      case 'roam': {
+        const d = Math.hypot(ai.tx - a.x, ai.tz - a.z);
+        this.steerTo(a, ai.tx, ai.tz, ai.speed, dt);
+        if (d < 1 || ai.timer < -25) {
+          const ang = Math.random() * Math.PI * 2;
+          const r = Math.random() * ai.roamR;
+          ai.tx = ai.homeX + Math.sin(ang) * r;
+          ai.tz = ai.homeZ + Math.cos(ang) * r;
+          if (groundHeight(ai.tx, ai.tz) < SEA_LEVEL + 0.3) {
+            ai.tx = a.x;
+            ai.tz = a.z;
+          }
+          ai.timer = 0;
+          if (Math.random() < 0.5) {
+            ai.mode = 'idle';
+            ai.timer = rand(3, 10);
+          }
+        }
+        break;
+      }
       case 'cross': {
         const d = Math.hypot(ai.tx - a.x, ai.tz - a.z);
         this.steerTo(a, ai.tx, ai.tz, ai.speed * 1.15, dt);
@@ -214,6 +268,12 @@ export class NPCs {
 
   rejoinSidewalk(a: Actor) {
     const ai = a.ai;
+    if (ai.roamR > 0) {
+      ai.mode = 'roam';
+      ai.tx = a.x;
+      ai.tz = a.z;
+      return;
+    }
     const bi = clamp(Math.floor((a.x + 360) / PITCH), 0, GRID_N - 2);
     const bj = clamp(Math.floor((a.z + 360) / PITCH), 0, GRID_N - 2);
     const b = BLOCKS[bi * (GRID_N - 1) + bj];

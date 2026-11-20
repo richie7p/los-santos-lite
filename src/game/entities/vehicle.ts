@@ -11,11 +11,15 @@ export interface DriveInput {
   throttle: number; // -1..1 (negative = brake / reverse)
   steer: number; // -1 (left) .. 1 (right)
   handbrake: boolean;
+  /** Helicopters: +1 climb, -1 descend. */
+  lift?: number;
 }
 
 export interface VehicleAI {
   kind: 'none' | 'traffic' | 'police' | 'mission' | 'parked';
-  wps: { x: number; z: number; turn?: boolean }[];
+  wps: { x: number; z: number; turn?: number }[];
+  outer: boolean;
+  pers: number;
   wp: number;
   lane: number;
   cruise: number;
@@ -76,7 +80,7 @@ export class Vehicle {
   airTime = 0;
   maxAir = 0;
   input: DriveInput = { throttle: 0, steer: 0, handbrake: false };
-  ai: VehicleAI = { kind: 'none', wps: [], wp: 0, lane: 2.2, cruise: 12, stuckT: 0, ignoreT: 0, fromNode: -1, toNode: -1, honk: 0, pathT: 0, reverseT: 0 };
+  ai: VehicleAI = { kind: 'none', wps: [], wp: 0, outer: false, pers: 1, lane: 2.2, cruise: 12, stuckT: 0, ignoreT: 0, fromNode: -1, toNode: -1, honk: 0, pathT: 0, reverseT: 0 };
   sinking = false;
   private skidT = 0;
   private smokeT = 0;
@@ -156,7 +160,14 @@ export class Vehicle {
     return out;
   }
 
+  /** Helicopter rotor speed 0..1. */
+  rotor = 0;
+
   update(dt: number, world: StaticWorld, ev: VehicleEvents) {
+    if (this.spec.flying) {
+      this.updateFlight(dt, world, ev);
+      return;
+    }
     const s = this.spec;
     const fx = this.fx;
     const fz = this.fz;
@@ -340,8 +351,104 @@ export class Vehicle {
     void dt;
   }
 
+  /** Arcade helicopter: W/S tilt forward/back, A/D yaw, lift climbs/descends. */
+  private updateFlight(dt: number, world: StaticWorld, ev: VehicleEvents) {
+    const s = this.spec;
+    const occupied = this.isPlayer || !!this.driver;
+    const want = occupied && !this.destroyed && !this.burning && !this.sinking ? 1 : 0;
+    this.rotor = clamp(this.rotor + (want ? dt * 0.45 : -dt * 0.18), 0, 1);
+    const power = clamp((this.rotor - 0.5) / 0.5, 0, 1);
+    const inp = this.destroyed || this.burning ? { throttle: 0, steer: 0, handbrake: false, lift: -1 } : this.input;
+    const fx = this.fx;
+    const fz = this.fz;
+    const rx = -fz;
+    const rz = fx;
+    let vF = this.vx * fx + this.vz * fz;
+    let vR = this.vx * rx + this.vz * rz;
+    // vertical: rotor lift fights gravity
+    let targetVy = (inp.lift ?? 0) * 9;
+    // ground effect: gentle touchdown
+    const agl = this.y - Math.max(groundHeight(this.x, this.z), world.supportHeight(this.x, this.z, this.y + 1.5));
+    if (targetVy < 0 && agl < 8) targetVy = Math.max(targetVy, -2.5 - agl * 0.4);
+    if (!this.burning) {
+      this.vy += (targetVy * power - this.vy) * Math.min(1, dt * 2.4 * Math.max(0.2, power));
+      this.vy -= 9.8 * (1 - power) * dt;
+    } else this.vy -= 9.8 * dt;
+    if (this.burning) this.yawRate += 2.5 * dt;
+    // horizontal: tilt drives speed
+    const targetF = inp.throttle * s.maxSpeed * power;
+    vF += (targetF - vF) * Math.min(1, dt * (Math.abs(targetF) > Math.abs(vF) ? 0.55 : 0.9));
+    vR *= Math.exp(-1.4 * dt);
+    if (!this.burning) this.yawRate = lerp(this.yawRate, -inp.steer * s.steer * Math.max(0.15, power), damp(4, dt));
+    this.yaw += this.yawRate * dt;
+    this.vx = fx * vF + rx * vR;
+    this.vz = fz * vF + rz * vR;
+    this.x = clamp(this.x + this.vx * dt, -1990, 1990);
+    this.z = clamp(this.z + this.vz * dt, -1990, 1990);
+    this.y = Math.min(450, this.y + this.vy * dt);
+    // buildings and props
+    const res = world.resolveCircle(this.x, this.z, 3.2, this.y + 0.3, 2.6);
+    if (res.hit) {
+      const vn = this.vx * res.nx + this.vz * res.nz;
+      this.x = res.x;
+      this.z = res.z;
+      if (vn < 0) {
+        this.vx -= 1.4 * vn * res.nx;
+        this.vz -= 1.4 * vn * res.nz;
+        if (-vn > 4) {
+          ev.onImpact(this, -vn, this.x - res.nx * 3, this.y + 2, this.z - res.nz * 3);
+          this.damage((-vn - 3) * (-vn - 3) * 14, ev);
+        }
+      }
+    }
+    // ground, rooftops and water
+    let ground = groundHeight(this.x, this.z);
+    const roof = world.supportHeight(this.x, this.z, this.y + 1.5);
+    if (roof > ground) ground = roof;
+    this.airborne = this.y > ground + 0.25;
+    if (this.y <= ground) {
+      const impact = -this.vy;
+      this.y = ground;
+      if (this.vy < 0) this.vy = 0;
+      if (impact > 8) this.damage((impact - 7) * 140, ev);
+      if (this.burning && !this.destroyed) {
+        this.destroyed = true;
+        ev.onDestroyed(this);
+      }
+      // skid friction on the ground
+      const k = Math.exp(-3.5 * dt);
+      this.vx *= k;
+      this.vz *= k;
+      if (ground < SEA_LEVEL - 0.6 && !this.sinking) this.sinking = true;
+    }
+    if (this.sinking) {
+      this.y = lerp(this.y, SEA_LEVEL - 2.5, damp(0.6, dt));
+      this.hp -= 150 * dt;
+      if (this.hp < -200) this.destroyed = true;
+    }
+    // attitude
+    const tilt = this.airborne ? 1 : 0.2;
+    this.pitch = lerp(this.pitch, -inp.throttle * 0.22 * power * tilt, damp(3, dt));
+    this.roll = lerp(this.roll, (-inp.steer * 0.12 + vR * 0.01) * power * tilt, damp(3, dt));
+    if (this.burning && !this.destroyed && Math.random() < 0.8) ev.fire(this.x, this.y + 2, this.z, 1.3);
+    if (this.hp < s.hp * 0.35 && !this.destroyed && Math.random() < 0.3) ev.smoke(this.x, this.y + 2.6, this.z, 0.7, 1);
+    if (this.hp <= 0 && !this.burning && !this.destroyed) {
+      this.burning = true;
+      this.burnT = 99;
+    }
+    this.syncRig(dt, 0);
+  }
+
   syncRig(dt: number, throttle = 0) {
     const r = this.rig;
+    const occupied = (this.crewCount > 0 || this.isPlayer || !!this.driver) && !this.destroyed;
+    r.driver.visible = occupied && !this.isPlayer && this.crewCount > 0;
+    r.driverPlayer.visible = occupied && this.isPlayer;
+    r.passenger.visible = !this.destroyed && this.crewCount >= 2;
+    if (r.rotor) {
+      r.rotor.rotation.y += this.rotor * 32 * dt;
+      r.tailRotor!.rotation.x += this.rotor * 45 * dt;
+    }
     r.root.position.set(this.x, this.y, this.z);
     r.root.rotation.set(0, this.yaw, 0);
     r.body.rotation.set(-this.pitch + this.visPitch, 0, -this.roll + this.visRoll);

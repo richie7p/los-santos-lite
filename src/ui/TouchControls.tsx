@@ -11,6 +11,7 @@ export function TouchControls({ game }: { game: Game }) {
   const inVehicle = useHud((s) => s.inVehicle);
   const weapon = useHud((s) => s.weapon);
   const prompt = useHud((s) => s.prompt);
+  const flying = useHud((s) => s.altitude !== null);
   const [stick, setStick] = useState<{ ox: number; oy: number; x: number; y: number } | null>(null);
   const [aim, setAim] = useState(false);
   const stickId = useRef<number | null>(null);
@@ -161,7 +162,8 @@ export function TouchControls({ game }: { game: Game }) {
             )}
           </div>
           <div className="flex flex-col items-center gap-2">
-            <Btn label={inVehicle ? '手煞車' : '跳躍'} sub="" {...hold('Space')} />
+            {flying && <Btn label="下降" sub="" {...hold('ShiftLeft')} />}
+            <Btn label={flying ? '上升' : inVehicle ? '手煞車' : '跳躍'} sub="" {...hold('Space')} />
             {canShoot ? (
               <button
                 {...fire}

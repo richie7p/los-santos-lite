@@ -25,6 +25,24 @@ export const POIS: POI[] = [
   { id: 'store2', kind: 'store', name: '24H 便利店 · 鐵軌', x: 225, z: -191 },
   { id: 'store3', kind: 'store', name: '24H 便利店 · 綠蔭', x: -191, z: 135 },
   { id: 'store4', kind: 'store', name: '24H 便利店 · 中央', x: 45, z: -171 },
+  // outside the city (yaw = facing direction of the shop front)
+  { id: 'ammu3', kind: 'ammu', name: '鐵砧槍械行 · 沙漠店', x: -1160, z: -91, yaw: Math.PI },
+  { id: 'store5', kind: 'store', name: '快加油 · 塵水站', x: -1200, z: -68, yaw: Math.PI },
+  { id: 'store6', kind: 'store', name: '快加油 · 北線站', x: 990, z: -690, yaw: -Math.PI / 2 },
+  { id: 'store7', kind: 'store', name: '快加油 · 西郊站', x: -640, z: -252, yaw: 0 },
+  { id: 'hospital2', kind: 'hospital', name: '塵水鎮診所', x: -1170, z: -120, yaw: 0 },
+  { id: 'police2', kind: 'police', name: '塵水鎮警長辦公室', x: -1215, z: -118, yaw: 0 },
+  { id: 'safehouse2', kind: 'safehouse', name: '安全屋 · 鏡湖小屋', x: 600, z: -1057, yaw: 0 },
+];
+
+/** Vehicles that always wait at fixed spots (helipads, airport, showpieces). */
+export const FIXED_VEHICLES: { type: 'heli' | 'sports' | 'muscle' | 'suv' | 'pickup'; x: number; z: number; yaw: number }[] = [
+  { type: 'heli', x: -760, z: 715, yaw: Math.PI / 2 },
+  { type: 'heli', x: 150, z: -108, yaw: 0 },
+  { type: 'sports', x: -1060, z: 684, yaw: 0 },
+  { type: 'pickup', x: -1290, z: -60, yaw: Math.PI / 2 },
+  { type: 'suv', x: 540, z: -1000, yaw: Math.PI / 2 },
+  { type: 'muscle', x: -300, z: -1150, yaw: 0 },
 ];
 
 export const poi = (id: string) => POIS.find((p) => p.id === id)!;
@@ -51,6 +69,17 @@ export const TAPES: [number, number][] = [
   [-330, -330],
   [330, -330],
   [-340, 330],
+  // the wider island
+  [-1250, -200],
+  [-1555, -650],
+  [-300, -1185],
+  [560, -1040],
+  [980, -820],
+  [-1350, 812],
+  [-1000, -400],
+  [-1600, 300],
+  [100, -1600],
+  [950, -900],
 ];
 
 export interface WeaponPickupDef {
@@ -119,12 +148,12 @@ export const RACES: RaceDef[] = [
       [-60, 405],
       [80, 405],
       [220, 405],
-      [367, 395],
+      [345, 383],
       [470, 270],
       [470, 100],
       [470, -100],
       [470, -258],
-      [367, -260],
+      [367, -270],
       [270, -270],
     ],
     gold: 50,
@@ -151,6 +180,34 @@ export const RACES: RaceDef[] = [
     silver: 40,
     bronze: 50,
     reward: 4000,
+  },
+  {
+    id: 'r_ring',
+    name: '環島公路大賽',
+    start: [-470, -198, -Math.PI / 2 - 0.15],
+    cps: [
+      [-650, -220], [-900, -160], [-1100, -110], [-1250, -100], [-1400, -150], [-1520, -320], [-1560, -650], [-1420, -1000],
+      [-1150, -1280], [-750, -1450], [-300, -1520], [150, -1480], [550, -1330], [850, -1100], [980, -800], [900, -520],
+      [700, -400], [560, -330], [470, -270], [367, -270],
+    ],
+    gold: 150,
+    silver: 175,
+    bronze: 210,
+    reward: 12000,
+  },
+  {
+    id: 'r_runway',
+    name: '機場跑道直線加速賽',
+    start: [-1360, 862, Math.PI / 2],
+    cps: [
+      [-1150, 862],
+      [-900, 862],
+      [-640, 862],
+    ],
+    gold: 17,
+    silver: 20,
+    bronze: 25,
+    reward: 5000,
   },
 ];
 

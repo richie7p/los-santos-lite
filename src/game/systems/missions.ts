@@ -180,7 +180,8 @@ export class Missions {
       grp.position.set(p.x, y, p.z);
       // face the nearest road (away from block centre)
       const b = BLOCKS.reduce((best, bl) => (Math.hypot(bl.cx - p.x, bl.cz - p.z) < Math.hypot(best.cx - p.x, best.cz - p.z) ? bl : best));
-      grp.rotation.y = Math.atan2(p.x - b.cx, p.z - b.cz);
+      const outside = Math.abs(p.x) > 372 || Math.abs(p.z) > 372;
+      grp.rotation.y = outside && p.yaw !== undefined ? p.yaw : Math.atan2(p.x - b.cx, p.z - b.cz);
       g.scene.add(grp);
       if (p.kind === 'store') {
         // kiosk counter + clerk

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { POIS, RACES, TAPES } from '../content';
 import { WEAPONS, WEAPON_ORDER, VEHICLES } from '../data';
 import {
+  AIRPORT,
   BUILDINGS,
+  COUNTRY_ROADS,
   CURB_H,
   LINES,
   RAMPS,
@@ -45,8 +47,12 @@ describe('city layout', () => {
   });
 
   it('the sea surrounds the island', () => {
-    expect(terrainHeight(0, 740)).toBeLessThan(SEA_LEVEL);
-    expect(terrainHeight(-740, 0)).toBeLessThan(SEA_LEVEL);
+    expect(terrainHeight(0, 1990)).toBeLessThan(SEA_LEVEL);
+    expect(terrainHeight(-1990, 0)).toBeLessThan(SEA_LEVEL);
+    expect(terrainHeight(1990, -1000)).toBeLessThan(SEA_LEVEL);
+    // the wider island has land far from the city
+    expect(terrainHeight(-1250, -100)).toBeGreaterThan(SEA_LEVEL);
+    expect(terrainHeight(-300, -1100)).toBeGreaterThan(60);
   });
 
   it('road graph routes between any two intersections', () => {
@@ -58,7 +64,26 @@ describe('city layout', () => {
     // Manhattan grid: 8 steps each way
     expect(path.length).toBe(17);
     for (let i = 1; i < path.length; i++) expect(path[i - 1].links).toContain(path[i].id);
-    expect(ROAD_NODES.length).toBe(LINES.length * LINES.length);
+    expect(ROAD_NODES.length).toBeGreaterThan(LINES.length * LINES.length);
+  });
+
+  it('every road node is reachable from downtown', () => {
+    const seen = new Set<number>([0]);
+    const stack = [0];
+    while (stack.length) for (const l of ROAD_NODES[stack.pop()!].links) if (!seen.has(l)) seen.add(l), stack.push(l);
+    expect(seen.size).toBe(ROAD_NODES.length);
+  });
+
+  it('country roads and highways stay drivable (grade <= 12%)', () => {
+    for (const r of COUNTRY_ROADS) {
+      for (let i = 1; i < r.pts.length; i++) {
+        const [ax, ay, az] = r.pts[i - 1];
+        const [bx, by, bz] = r.pts[i];
+        const d = Math.hypot(bx - ax, bz - az);
+        if (d > 0.5) expect(Math.abs(by - ay) / d, `${r.id} #${i}`).toBeLessThanOrEqual(0.12);
+        expect(by, `${r.id} above water`).toBeGreaterThan(SEA_LEVEL);
+      }
+    }
   });
 });
 
@@ -73,7 +98,8 @@ describe('content placement', () => {
   it('race checkpoints are on roads', () => {
     for (const r of RACES) {
       for (const [x, z] of r.cps) {
-        const onRoad = onCityRoad(x, z) || nearestCountryRoad(x, z).dist < 12;
+        const onRunway = x > AIRPORT.minX && x < AIRPORT.maxX && Math.abs(z - 862) < 20;
+        const onRoad = onCityRoad(x, z) || nearestCountryRoad(x, z).dist < 12 || onRunway;
         expect(onRoad, `${r.id} ${x},${z}`).toBe(true);
       }
       expect(r.gold).toBeLessThan(r.silver);

@@ -14,6 +14,12 @@ export interface VehicleRig {
   sirenR?: THREE.MeshStandardMaterial;
   sirenB?: THREE.MeshStandardMaterial;
   driverSeat: THREE.Vector3;
+  /** Seated figures shown through the glass. */
+  driver: THREE.Mesh;
+  driverPlayer: THREE.Mesh;
+  passenger: THREE.Mesh;
+  rotor?: THREE.Object3D;
+  tailRotor?: THREE.Object3D;
 }
 
 interface Cached {
@@ -26,7 +32,7 @@ interface Cached {
 const ni = (g: THREE.BufferGeometry) => (g.index ? g.toNonIndexed() : g);
 const cache = new Map<VehicleType, Cached>();
 
-const glassMat = new THREE.MeshStandardMaterial({ color: 0x1b2633, metalness: 0.9, roughness: 0.06 });
+const glassMat = new THREE.MeshStandardMaterial({ color: 0x22303d, metalness: 0.35, roughness: 0.06, transparent: true, opacity: 0.74, depthWrite: false });
 const trimMat = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.55, metalness: 0.2 });
 const chromeMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 1, roughness: 0.15 });
 /** Tyre + rim merged into one vertex-coloured mesh (one draw call per wheel). */
@@ -55,6 +61,112 @@ function cg(key: string, fn: () => THREE.BufferGeometry) {
   let g = geoCache.get(key);
   if (!g) geoCache.set(key, (g = fn()));
   return g;
+}
+
+// ---- seated figures (one merged, vertex-coloured mesh each)
+const DRIVER_LOOKS: [number, number, number][] = [
+  // skin, shirt, hair
+  [0xe0ac69, 0x2e86c1, 0x1b1b1b],
+  [0x8d5524, 0xc0392b, 0x111111],
+  [0xf1c27d, 0x27ae60, 0x6a4e2a],
+  [0xc68642, 0x34495e, 0x2a2a2a],
+  [0xffdbac, 0x8e44ad, 0xb08850],
+  [0xd9a066, 0xecf0f1, 0x3b2a1a],
+];
+const POLICE_LOOK: [number, number, number] = [0xc68642, 0x1f3a5f, 0x14213d];
+const PLAYER_LOOK: [number, number, number] = [0xd9a066, 0x23303d, 0x1b1b1b];
+const figureMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 });
+function figureGeometry(look: [number, number, number]) {
+  return cg(`fig${look.join('_')}`, () => {
+    const paint = (g: THREE.BufferGeometry, c: number) => {
+      const col = new THREE.Color(c);
+      const n = g.attributes.position.count;
+      const arr = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) col.toArray(arr, i * 3);
+      g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+      g.deleteAttribute('uv');
+      return ni(g);
+    };
+    const [skin, shirt, hair] = look;
+    return mergeGeometries([
+      paint(new THREE.CapsuleGeometry(0.17, 0.26, 3, 8).scale(1.25, 1, 0.8).translate(0, 0.36, -0.05), shirt),
+      paint(new THREE.SphereGeometry(0.115, 10, 8).scale(0.95, 1.08, 1).translate(0, 0.78, 0), skin),
+      paint(new THREE.SphereGeometry(0.122, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.55).translate(0, 0.8, -0.01), hair),
+      paint(new THREE.CapsuleGeometry(0.05, 0.36, 3, 6).rotateX(-1.2).translate(0.2, 0.42, 0.2), shirt),
+      paint(new THREE.CapsuleGeometry(0.05, 0.36, 3, 6).rotateX(-1.2).translate(-0.2, 0.42, 0.2), shirt),
+      paint(new THREE.TorusGeometry(0.16, 0.02, 4, 14).rotateX(-0.9).translate(0, 0.5, 0.42), 0x151515),
+    ])!;
+  });
+}
+function figure(look: [number, number, number], x: number, y: number, z: number) {
+  const m = new THREE.Mesh(figureGeometry(look), figureMat);
+  m.position.set(x, y, z);
+  m.visible = false;
+  return m;
+}
+
+// ---- helicopter
+function createHeliRig(color: number): VehicleRig {
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  const paint = new THREE.MeshPhysicalMaterial({ color, metalness: 0.5, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.1 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x222428, metalness: 0.5, roughness: 0.5 });
+  const cabin = new THREE.Mesh(cg('heliBody', () => new THREE.SphereGeometry(1.35, 18, 14).scale(1, 0.95, 1.75).translate(0, 1.5, 0.6)), paint);
+  const glass = new THREE.Mesh(
+    cg('heliGlass', () => new THREE.SphereGeometry(1.15, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55).scale(1, 0.9, 1.25).rotateX(0.55).translate(0, 1.75, 1.6)),
+    glassMat,
+  );
+  const boom = new THREE.Mesh(cg('heliBoom', () => new THREE.CylinderGeometry(0.16, 0.38, 5.6, 10).rotateX(Math.PI / 2).translate(0, 1.85, -3.6)), paint);
+  const fin = new THREE.Mesh(cg('heliFin', () => new THREE.BoxGeometry(0.1, 1.4, 0.9).translate(0, 2.4, -6.2)), paint);
+  const stab = new THREE.Mesh(cg('heliStab', () => new THREE.BoxGeometry(1.8, 0.08, 0.5).translate(0, 1.95, -5.6)), paint);
+  const skids = new THREE.Mesh(
+    cg('heliSkids', () =>
+      mergeGeometries([
+        ni(new THREE.CylinderGeometry(0.06, 0.06, 3.6, 6).rotateX(Math.PI / 2).translate(0.95, 0.06, 0.5)),
+        ni(new THREE.CylinderGeometry(0.06, 0.06, 3.6, 6).rotateX(Math.PI / 2).translate(-0.95, 0.06, 0.5)),
+        ni(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 5).rotateZ(0.35).translate(0.8, 0.45, 1.3)),
+        ni(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 5).rotateZ(-0.35).translate(-0.8, 0.45, 1.3)),
+        ni(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 5).rotateZ(0.35).translate(0.8, 0.45, -0.3)),
+        ni(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 5).rotateZ(-0.35).translate(-0.8, 0.45, -0.3)),
+      ])!,
+    ),
+    dark,
+  );
+  const mast = new THREE.Mesh(cg('heliMast', () => new THREE.CylinderGeometry(0.12, 0.16, 0.6, 8).translate(0, 2.95, 0.4)), dark);
+  for (const m of [cabin, glass, boom, fin, stab, skids, mast]) {
+    m.castShadow = true;
+    body.add(m);
+  }
+  const rotor = new THREE.Group();
+  rotor.position.set(0, 3.25, 0.4);
+  const bladeGeo = cg('heliBlade', () => new THREE.BoxGeometry(0.28, 0.04, 5.4).translate(0, 0, 2.7));
+  for (let k = 0; k < 4; k++) {
+    const b = new THREE.Mesh(bladeGeo, dark);
+    b.rotation.y = (k * Math.PI) / 2;
+    b.castShadow = true;
+    rotor.add(b);
+  }
+  body.add(rotor);
+  const tailRotor = new THREE.Group();
+  tailRotor.position.set(0.18, 2.4, -6.2);
+  for (let k = 0; k < 2; k++) {
+    const b = new THREE.Mesh(cg('heliTailBlade', () => new THREE.BoxGeometry(0.04, 1.4, 0.14)), dark);
+    b.rotation.x = (k * Math.PI) / 2;
+    tailRotor.add(b);
+  }
+  body.add(tailRotor);
+  const head = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.4 });
+  const brake = new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff1a1a, emissiveIntensity: 0.6 });
+  const nav = new THREE.Mesh(cg('heliNav', () => new THREE.SphereGeometry(0.08, 6, 4).translate(0, 2.2, -6.65)), brake);
+  const land = new THREE.Mesh(cg('heliLand', () => new THREE.SphereGeometry(0.12, 6, 4).translate(0, 0.7, 2.6)), head);
+  body.add(nav, land);
+  const seat = new THREE.Vector3(-0.35, 0.95, 1.3);
+  const driver = figure(DRIVER_LOOKS[0], seat.x, seat.y, seat.z);
+  const driverPlayer = figure(PLAYER_LOOK, seat.x, seat.y, seat.z);
+  const passenger = figure(DRIVER_LOOKS[1], -seat.x, seat.y, seat.z);
+  body.add(driver, driverPlayer, passenger);
+  return { root, body, wheels: [], paint, brake, head, driverSeat: seat, driver, driverPlayer, passenger, rotor, tailRotor };
 }
 
 function profileLower(s: VehicleSpec) {
@@ -158,6 +270,7 @@ function buildCached(t: VehicleType): Cached {
 }
 
 export function createVehicleRig(t: VehicleType, color: number): VehicleRig {
+  if (t === 'heli') return createHeliRig(color);
   const s = VEHICLES[t];
   const geo = cache.get(t) ?? buildCached(t);
   const root = new THREE.Group();
@@ -254,17 +367,13 @@ export function createVehicleRig(t: VehicleType, color: number): VehicleRig {
     wheels.push({ pivot, spin, front, x, z });
   }
 
-  return {
-    root,
-    body,
-    wheels,
-    paint,
-    brake,
-    head,
-    sirenR,
-    sirenB,
-    driverSeat: new THREE.Vector3(-s.width * 0.22, s.hood - 0.45, hl - s.hoodLen - 0.9),
-  };
+  const seat = new THREE.Vector3(-s.width * 0.22, s.hood - 0.5, hl - s.hoodLen - 0.95);
+  const look = t === 'police' ? POLICE_LOOK : DRIVER_LOOKS[Math.floor(Math.random() * DRIVER_LOOKS.length)];
+  const driver = figure(look, seat.x, seat.y, seat.z);
+  const driverPlayer = figure(PLAYER_LOOK, seat.x, seat.y, seat.z);
+  const passenger = figure(t === 'police' ? POLICE_LOOK : DRIVER_LOOKS[Math.floor(Math.random() * DRIVER_LOOKS.length)], -seat.x, seat.y, seat.z);
+  body.add(driver, driverPlayer, passenger);
+  return { root, body, wheels, paint, brake, head, sirenR, sirenB, driverSeat: seat, driver, driverPlayer, passenger };
 }
 
 export function disposeVehicleRig(r: VehicleRig) {

@@ -234,6 +234,7 @@ function Stat({ label, v }: { label: string; v: string }) {
 export function MapScreen({ game }: { game: Game }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ x: number; y: number; moved: number } | null>(null);
   const [legend, setLegend] = useState<{ icon: string; color: string; label: string }[]>([]);
   useEffect(() => {
     const c = ref.current;
@@ -248,6 +249,7 @@ export function MapScreen({ game }: { game: Game }) {
     const ro = new ResizeObserver(fit);
     ro.observe(w);
     game.setMapCanvases(game.map.mini, c);
+    game.map.openBig();
     const seen = new Map<string, { icon: string; color: string; label: string }>();
     for (const b of game.map.blipList()) if (b.label && !seen.has(b.icon + b.label.split(' ')[0])) seen.set(b.icon + b.label.split(' ')[0], { icon: b.icon, color: b.color, label: b.label });
     setLegend([...seen.values()].slice(0, 18));
@@ -267,15 +269,46 @@ export function MapScreen({ game }: { game: Game }) {
       <div ref={wrap} className="relative flex-1">
         <canvas
           ref={ref}
-          className="absolute inset-0 h-full w-full cursor-crosshair"
-          onClick={(e) => {
+          className="absolute inset-0 h-full w-full cursor-crosshair touch-none"
+          onWheel={(e) => {
             const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
-            game.setWaypoint(e.clientX - r.left, e.clientY - r.top);
+            game.map.zoomBy(e.deltaY < 0 ? 1.25 : 0.8, e.clientX - r.left, e.clientY - r.top);
+          }}
+          onPointerDown={(e) => {
+            (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+            drag.current = { x: e.clientX, y: e.clientY, moved: 0 };
+          }}
+          onPointerMove={(e) => {
+            const d = drag.current;
+            if (!d) return;
+            game.map.panBy(e.clientX - d.x, e.clientY - d.y);
+            d.moved += Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y);
+            d.x = e.clientX;
+            d.y = e.clientY;
+          }}
+          onPointerUp={(e) => {
+            const d = drag.current;
+            drag.current = null;
+            if (d && d.moved < 6) {
+              const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
+              game.setWaypoint(e.clientX - r.left, e.clientY - r.top);
+            }
           }}
         />
+        <div className="absolute bottom-4 left-4 flex flex-col gap-2">
+          <button className="h-10 w-10 rounded-full bg-black/60 text-xl font-black text-white" onClick={() => game.map.zoomBy(1.4)}>
+            +
+          </button>
+          <button className="h-10 w-10 rounded-full bg-black/60 text-xl font-black text-white" onClick={() => game.map.zoomBy(1 / 1.4)}>
+            −
+          </button>
+          <button className="h-10 w-10 rounded-full bg-black/60 text-xs font-black text-white" onClick={() => game.map.openBig()}>
+            我
+          </button>
+        </div>
         <div className="absolute left-4 top-4 rounded-xl bg-black/60 px-4 py-2 text-white">
           <div className="font-display text-2xl font-black">索拉港地圖</div>
-          <div className="text-xs text-white/60">點擊地圖設定 / 取消導航點　·　按 M 或 Esc 返回</div>
+          <div className="text-xs text-white/60">滾輪縮放、拖曳移動、點擊設定導航點　·　按 M 或 Esc 返回</div>
         </div>
       </div>
       <div className="hidden w-64 overflow-y-auto border-l border-white/10 bg-[#0e131c]/95 p-4 md:block">

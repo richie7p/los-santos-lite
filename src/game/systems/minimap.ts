@@ -13,8 +13,10 @@ import {
   WORLD_HALF,
   findPath,
   nearestNode,
-  terrainHeight,
+  AIRPORT,
+  biomeAt,
 } from '../world/layout';
+import { GRID_SAMPLES, GRID_STEP, heightGrid } from '../world/heightGrid';
 import type { Blip } from './missions';
 import type { Game } from '../Game';
 
@@ -22,43 +24,67 @@ const MAP_RES = 2; // metres per pixel of the base image
 const SIZE = Math.round((WORLD_HALF * 2) / MAP_RES);
 
 function buildBase(): HTMLCanvasElement {
-  const c = document.createElement('canvas');
-  c.width = c.height = SIZE;
-  const ctx = c.getContext('2d')!;
-  const img = ctx.createImageData(SIZE, SIZE);
-  for (let py = 0; py < SIZE; py++) {
-    for (let px = 0; px < SIZE; px++) {
-      const x = px * MAP_RES - WORLD_HALF;
-      const z = py * MAP_RES - WORLD_HALF;
-      const h = terrainHeight(x, z);
+  // terrain colours from the shared height grid, then crisp vector roads & buildings on top
+  const H = heightGrid();
+  const S = GRID_SAMPLES;
+  const tc = document.createElement('canvas');
+  tc.width = tc.height = S;
+  const tctx = tc.getContext('2d')!;
+  const img = tctx.createImageData(S, S);
+  for (let j = 0; j < S; j++) {
+    for (let i = 0; i < S; i++) {
+      const x = -WORLD_HALF + i * GRID_STEP;
+      const z = -WORLD_HALF + j * GRID_STEP;
+      const h = H[j * S + i];
+      const bio = biomeAt(x, z);
       let r: number, g: number, b: number;
       if (h < SEA_LEVEL) {
         const deep = Math.min(1, (SEA_LEVEL - h) / 6);
         r = 38 - deep * 14;
         g = 74 - deep * 20;
         b = 102 - deep * 20;
-      } else if (x > 372 && Math.abs(z) < 330) {
+      } else if (bio.harbor) {
         r = 92;
         g = 96;
         b = 100;
-      } else if (h < 0.7 && (z > 372 || Math.abs(x) > 480 || Math.abs(z) > 480)) {
+      } else if (bio.airport > 0.6) {
+        r = 104;
+        g = 110;
+        b = 104;
+      } else if (h < 0.7 && (bio.beach > 0.3 || Math.abs(x) > 480 || Math.abs(z) > 480)) {
         r = 176;
         g = 160;
         b = 118;
       } else {
-        const k = Math.min(1, h / 45);
-        r = 64 + k * 50;
-        g = 92 + k * 30;
-        b = 60 + k * 30;
+        const k = Math.min(1, h / 160);
+        r = 64 + k * 80;
+        g = 92 + k * 55;
+        b = 60 + k * 70;
+        if (bio.desert > 0) {
+          r += (182 - r) * bio.desert;
+          g += (150 - g) * bio.desert;
+          b += (102 - b) * bio.desert;
+        }
+        if (bio.forest > 0) {
+          r -= 14 * bio.forest;
+          g -= 6 * bio.forest;
+          b -= 12 * bio.forest;
+        }
+        if (h > 165) r = g = b = 175 + Math.min(45, (h - 165) * 2);
       }
-      const i = (py * SIZE + px) * 4;
-      img.data[i] = r;
-      img.data[i + 1] = g;
-      img.data[i + 2] = b;
-      img.data[i + 3] = 255;
+      const k = (j * S + i) * 4;
+      img.data[k] = r;
+      img.data[k + 1] = g;
+      img.data[k + 2] = b;
+      img.data[k + 3] = 255;
     }
   }
-  ctx.putImageData(img, 0, 0);
+  tctx.putImageData(img, 0, 0);
+  const c = document.createElement('canvas');
+  c.width = c.height = SIZE;
+  const ctx = c.getContext('2d')!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(tc, 0, 0, SIZE, SIZE);
   const tx = (x: number) => (x + WORLD_HALF) / MAP_RES;
   // city blocks
   ctx.fillStyle = '#4b5361';
@@ -68,6 +94,10 @@ function buildBase(): HTMLCanvasElement {
   }
   ctx.fillStyle = '#4f7a46';
   for (const p of PARKS) ctx.fillRect(tx(p.cx) - p.w / 2 / MAP_RES, tx(p.cz) - p.d / 2 / MAP_RES, p.w / MAP_RES, p.d / MAP_RES);
+  // airport runway
+  ctx.fillStyle = '#2a2e35';
+  ctx.fillRect(tx((AIRPORT.minX + AIRPORT.maxX) / 2 - 380), tx(862 - 23), 760 / MAP_RES, 46 / MAP_RES);
+  ctx.fillRect(tx(-1340), tx(765), 560 / MAP_RES, 60 / MAP_RES);
   // roads
   ctx.fillStyle = '#20242b';
   const span = (GRID_MAX - GRID_MIN + ROAD_W) / MAP_RES;
@@ -75,14 +105,19 @@ function buildBase(): HTMLCanvasElement {
     ctx.fillRect(tx(GRID_MIN) - ROAD_W / 2 / MAP_RES, tx(l) - ROAD_W / 2 / MAP_RES, span, ROAD_W / MAP_RES);
     ctx.fillRect(tx(l) - ROAD_W / 2 / MAP_RES, tx(GRID_MIN) - ROAD_W / 2 / MAP_RES, ROAD_W / MAP_RES, span);
   }
-  ctx.strokeStyle = '#20242b';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   for (const r of COUNTRY_ROADS) {
-    ctx.lineWidth = r.width / MAP_RES;
+    ctx.strokeStyle = r.highway ? '#3b3420' : '#20242b';
+    ctx.lineWidth = (r.width + (r.highway ? 4 : 0)) / MAP_RES;
     ctx.beginPath();
     r.pts.forEach(([x, , z], i) => (i ? ctx.lineTo(tx(x), tx(z)) : ctx.moveTo(tx(x), tx(z))));
     ctx.stroke();
+    if (r.highway) {
+      ctx.strokeStyle = '#c9a227';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
   }
   // buildings
   ctx.fillStyle = '#7d8592';
@@ -110,11 +145,6 @@ export class MapRenderer {
     const key = `${a.id}-${b.id}`;
     if (key === this.routeKey) return;
     this.routeKey = key;
-    const inCity = (x: number, z: number) => Math.abs(x) < 380 && Math.abs(z) < 380;
-    if (!inCity(tx, tz) && !inCity(px, pz)) {
-      this.route = [{ x: px, z: pz }, { x: tx, z: tz }];
-      return;
-    }
     const path = findPath(a, b).map((n) => ({ x: n.x, z: n.z }));
     this.route = [{ x: px, z: pz }, ...path, { x: tx, z: tz }];
   }
@@ -267,14 +297,49 @@ export class MapRenderer {
 
   /** Full map: fit whole island. Returns transform for click handling. */
   bigView = { ox: 0, oy: 0, s: 1 };
+  /** Big-map zoom (1 = whole island) and pan centre in world units. */
+  zoom = 1;
+  panX = 0;
+  panZ = 0;
+  private bigOpened = false;
+  /** Centre the big map on the player when it opens. */
+  openBig() {
+    const p = this.g.player;
+    this.zoom = 2.2;
+    this.panX = p.vehicle?.x ?? p.x;
+    this.panZ = p.vehicle?.z ?? p.z;
+    this.bigOpened = true;
+  }
+  zoomBy(f: number, cx?: number, cy?: number) {
+    const before = cx !== undefined && cy !== undefined ? this.bigToWorld(cx, cy) : null;
+    this.zoom = Math.max(1, Math.min(14, this.zoom * f));
+    if (before && this.big) {
+      // keep the point under the cursor fixed
+      const s = (Math.min(this.big.width, this.big.height) / (WORLD_HALF * 2.05)) * this.zoom;
+      this.panX = before.x - (cx! - this.big.width / 2) / s;
+      this.panZ = before.z - (cy! - this.big.height / 2) / s;
+    }
+    this.clampPan();
+  }
+  panBy(dx: number, dy: number) {
+    const s = this.bigView.s;
+    this.panX -= dx / s;
+    this.panZ -= dy / s;
+    this.clampPan();
+  }
+  private clampPan() {
+    this.panX = Math.max(-WORLD_HALF, Math.min(WORLD_HALF, this.panX));
+    this.panZ = Math.max(-WORLD_HALF, Math.min(WORLD_HALF, this.panZ));
+  }
   private drawBig(c: HTMLCanvasElement, px: number, pz: number) {
     const g = this.g;
     const ctx = c.getContext('2d')!;
     const W = c.width;
     const H = c.height;
-    const s = Math.min(W, H) / (WORLD_HALF * 1.75);
-    const ox = W / 2;
-    const oy = H / 2;
+    if (!this.bigOpened) this.openBig();
+    const s = (Math.min(W, H) / (WORLD_HALF * 2.05)) * this.zoom;
+    const ox = W / 2 - this.panX * s;
+    const oy = H / 2 - this.panZ * s;
     this.bigView = { ox, oy, s };
     ctx.fillStyle = '#16303e';
     ctx.fillRect(0, 0, W, H);
@@ -300,18 +365,25 @@ export class MapRenderer {
     ctx.textBaseline = 'middle';
     // district labels
     ctx.font = '600 13px "Noto Sans TC",sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    for (const [name, x, z] of [
-      ['中央商務區', 0, 0],
-      ['綠蔭住宅區', -260, -260],
-      ['鐵軌工業區', 300, -60],
-      ['海濱商圈', 60, 300],
-      ['索拉港碼頭', 520, 40],
-      ['金沙海灘', -120, 470],
-      ['雲杉丘陵', -150, -520],
-      ['風車原野', -560, -120],
-    ] as [string, number, number][])
-      ctx.fillText(name, ox + x * s, oy + z * s);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    const labels: [string, number, number, number][] = [
+      ['中央商務區', 0, 0, 2],
+      ['綠蔭住宅區', -260, -260, 2.5],
+      ['鐵軌工業區', 300, -60, 2.5],
+      ['海濱商圈', 60, 300, 2.5],
+      ['索拉港碼頭', 520, 40, 1],
+      ['金沙海灘', -120, 470, 1],
+      ['雲杉丘陵', -150, -560, 1.5],
+      ['風車原野', -560, -120, 1.5],
+      ['塵水鎮', -1250, -40, 1],
+      ['塵水沙漠', -1250, -520, 1],
+      ['索拉國際機場', -980, 960, 1],
+      ['北嶺山脈', -300, -1000, 1],
+      ['鏡湖林區', 760, -980, 1],
+      ['杉林高地', 820, -560, 1],
+      ['環島快速道路', 120, -1530, 1.5],
+    ];
+    for (const [name, x, z, minZoom] of labels) if (this.zoom >= minZoom) ctx.fillText(name, ox + x * s, oy + z * s);
     for (const b of this.blips) this.icon(ctx, ox + b.x * s, oy + b.z * s, b, b.big ? 10 : 8);
     // player
     ctx.save();

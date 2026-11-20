@@ -1,6 +1,7 @@
 /** Builds all static world geometry for Port Solara. */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { GRID_RES, GRID_SAMPLES, GRID_STEP, gridAt, heightGrid } from './heightGrid';
 import { StaticWorld } from '../core/collision';
 import { rng, smoothstep } from '../core/math';
 import {
@@ -20,6 +21,11 @@ import {
   SEA_LEVEL,
   SIDEWALK_W,
   WORLD_HALF,
+  AIRPORT,
+  GAS_STATIONS,
+  LAKE,
+  TOWN,
+  biomeAt,
   buildingBase,
   nearestCountryRoad,
   terrainHeight,
@@ -177,60 +183,128 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
   };
   Object.values(tex).forEach((t) => (t.anisotropy = maxAniso));
 
-  // ---------------------------------------------------------- terrain
+  // ---------------------------------------------------------- terrain (8x8 tiles from a shared height grid)
   {
-    const SIZE = WORLD_HALF * 2;
-    const SEG = 220;
-    const g = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
-    g.rotateX(-Math.PI / 2);
-    const pos = g.attributes.position as THREE.BufferAttribute;
-    const colors = new Float32Array(pos.count * 3);
+    const H = heightGrid();
+    const S = GRID_SAMPLES;
     const cSand = new THREE.Color(0xe3cf9e);
     const cWetSand = new THREE.Color(0xb59f72);
+    const cDesert = new THREE.Color(0xd2a96e);
+    const cDesertDark = new THREE.Color(0xb98a55);
     const cGrass = new THREE.Color(0x5f8a3e);
     const cDryGrass = new THREE.Color(0xa7a35a);
+    const cForest = new THREE.Color(0x3f6a33);
     const cRock = new THREE.Color(0x8a8378);
+    const cSnow = new THREE.Color(0xf2f4f7);
     const cConcrete = new THREE.Color(0x85847f);
+    const cTarmac = new THREE.Color(0x6e706f);
     const cSea = new THREE.Color(0x4e6f6c);
+    const cRoadside = new THREE.Color(0x8b7e66);
     const tmp = new THREE.Color();
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const z = pos.getZ(i);
-      const h = terrainHeight(x, z);
-      pos.setY(i, h);
-      // slope estimate
-      const hx = terrainHeight(x + 2, z) - h;
-      const hz = terrainHeight(x, z + 2) - h;
-      const slope = Math.hypot(hx, hz) / 2;
-      const n = (Math.sin(x * 0.05) * Math.cos(z * 0.07) + 1) * 0.5;
-      if (x > 372 && Math.abs(z) < 330 && h > 0) tmp.copy(cConcrete);
-      else if (h < SEA_LEVEL - 0.2) tmp.copy(cSea);
-      else if (h < 0.6 && (z > 372 || Math.abs(x) > 500 || Math.abs(z) > 500)) tmp.copy(cSand).lerp(cWetSand, smoothstep(0.05, SEA_LEVEL, h));
-      else {
-        tmp.copy(cGrass).lerp(cDryGrass, x < -380 ? 0.55 + n * 0.3 : n * 0.35);
-        tmp.lerp(cRock, smoothstep(0.35, 0.8, slope));
+    // per-sample colour & normal
+    const col = new Float32Array(S * S * 3);
+    const nor = new Float32Array(S * S * 3);
+    for (let j = 0; j < S; j++) {
+      for (let i = 0; i < S; i++) {
+        const k = j * S + i;
+        const x = -WORLD_HALF + i * GRID_STEP;
+        const z = -WORLD_HALF + j * GRID_STEP;
+        const h = H[k];
+        const hl = gridAt(i - 1, j);
+        const hr = gridAt(i + 1, j);
+        const hd = gridAt(i, j - 1);
+        const hu = gridAt(i, j + 1);
+        const nx = hl - hr;
+        const nz = hd - hu;
+        const ny = 2 * GRID_STEP;
+        const nl = Math.hypot(nx, ny, nz);
+        nor[k * 3] = nx / nl;
+        nor[k * 3 + 1] = ny / nl;
+        nor[k * 3 + 2] = nz / nl;
+        const slope = Math.hypot(nx, nz) / (2 * GRID_STEP);
+        const n = (Math.sin(x * 0.05) * Math.cos(z * 0.07) + 1) * 0.5;
+        const bio = biomeAt(x, z);
+        if (bio.harbor && h > 0) tmp.copy(cConcrete);
+        else if (h < SEA_LEVEL - 0.2) tmp.copy(cSea);
+        else if (bio.airport > 0.6) tmp.copy(cTarmac).lerp(cDryGrass, 0.25 + n * 0.2);
+        else if (h < 0.6 && (bio.beach > 0.3 || Math.abs(x) > 500 || Math.abs(z) > 500)) tmp.copy(cSand).lerp(cWetSand, smoothstep(0.05, SEA_LEVEL, h));
+        else {
+          tmp.copy(cGrass).lerp(cDryGrass, x < -380 ? 0.55 + n * 0.3 : n * 0.35);
+          if (bio.forest > 0) tmp.lerp(cForest, bio.forest * 0.8);
+          if (bio.desert > 0) tmp.lerp(cDesert, bio.desert).lerp(cDesertDark, bio.desert * n * 0.5);
+          tmp.lerp(cRock, smoothstep(0.35, 0.8, slope) * (1 - bio.desert * 0.5));
+          tmp.lerp(cRock, smoothstep(90, 140, h) * 0.7);
+          tmp.lerp(cSnow, smoothstep(150, 185, h) * (1 - smoothstep(0.6, 1.0, slope)));
+        }
+        const rd = nearestCountryRoad(x, z);
+        if (rd.dist < rd.width / 2 + 3 && (Math.abs(x) > 372 || Math.abs(z) > 372)) tmp.lerp(cRoadside, 0.5);
+        col[k * 3] = tmp.r;
+        col[k * 3 + 1] = tmp.g;
+        col[k * 3 + 2] = tmp.b;
       }
-      const rd = nearestCountryRoad(x, z);
-      if (rd.dist < rd.width / 2 + 3 && (Math.abs(x) > 372 || Math.abs(z) > 372)) tmp.lerp(new THREE.Color(0x8b7e66), 0.5);
-      colors[i * 3] = tmp.r;
-      colors[i * 3 + 1] = tmp.g;
-      colors[i * 3 + 2] = tmp.b;
     }
-    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    // detail UV
-    const uv = g.attributes.uv as THREE.BufferAttribute;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (SIZE / 18), uv.getY(i) * (SIZE / 18));
-    g.computeVertexNormals();
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, map: tex.detail, roughness: 0.95 });
     wet(m, 0.7, 0.88);
-    const t = mesh(g, m, false, true);
-    t.name = 'terrain';
-    root.add(t);
+    const TILES = 8;
+    const per = GRID_RES / TILES;
+    for (let ty = 0; ty < TILES; ty++)
+      for (let tx = 0; tx < TILES; tx++) {
+        const n = (per + 1) * (per + 1);
+        const pos = new Float32Array(n * 3);
+        const c = new Float32Array(n * 3);
+        const no = new Float32Array(n * 3);
+        const uv = new Float32Array(n * 2);
+        let minY = Infinity;
+        let maxY = -Infinity;
+        let v = 0;
+        for (let j = 0; j <= per; j++)
+          for (let i = 0; i <= per; i++) {
+            const gi = tx * per + i;
+            const gj = ty * per + j;
+            const k = gj * S + gi;
+            const x = -WORLD_HALF + gi * GRID_STEP;
+            const z = -WORLD_HALF + gj * GRID_STEP;
+            pos[v * 3] = x;
+            pos[v * 3 + 1] = H[k];
+            pos[v * 3 + 2] = z;
+            minY = Math.min(minY, H[k]);
+            maxY = Math.max(maxY, H[k]);
+            c.set(col.subarray(k * 3, k * 3 + 3), v * 3);
+            no.set(nor.subarray(k * 3, k * 3 + 3), v * 3);
+            uv[v * 2] = x / 18;
+            uv[v * 2 + 1] = -z / 18;
+            v++;
+          }
+        // skip tiles that are entirely deep sea
+        if (maxY < SEA_LEVEL - 3) continue;
+        const idx: number[] = [];
+        for (let j = 0; j < per; j++)
+          for (let i = 0; i < per; i++) {
+            const a0 = j * (per + 1) + i;
+            const b0 = a0 + 1;
+            const c0 = a0 + per + 1;
+            const d0 = c0 + 1;
+            idx.push(a0, c0, b0, b0, c0, d0);
+          }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        g.setAttribute('normal', new THREE.BufferAttribute(no, 3));
+        g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+        g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+        g.setIndex(idx);
+        g.computeBoundingSphere();
+        const t = new THREE.Mesh(g, m);
+        t.receiveShadow = true;
+        t.matrixAutoUpdate = false;
+        t.name = 'terrain';
+        root.add(t);
+        void minY;
+      }
   }
 
   // ---------------------------------------------------------- water
   const waterNormal = waterNormalTexture();
-  waterNormal.repeat.set(60, 60);
+  waterNormal.repeat.set(140, 140);
   const waterMat = new THREE.MeshStandardMaterial({
     color: 0x1d5a73,
     roughness: 0.08,
@@ -240,7 +314,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     transparent: true,
     opacity: 0.88,
   });
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), waterMat);
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(14000, 14000), waterMat);
   water.rotation.x = -Math.PI / 2;
   water.position.y = SEA_LEVEL;
   water.receiveShadow = true;
@@ -633,17 +707,31 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
       palmMats.push(new THREE.Matrix4().compose(new THREE.Vector3(p.cx + Math.sin(a) * 22, CURB_H, p.cz + 8 + Math.cos(a) * 14), quat(a), one));
     }
   }
-  // countryside trees
-  for (let k = 0; k < 1100; k++) {
-    const x = (r() - 0.5) * 1300;
-    const z = (r() - 0.5) * 1300;
+  // countryside: forests, scattered trees and desert cacti
+  const cactusMats: THREE.Matrix4[] = [];
+  for (let k = 0; k < 9000; k++) {
+    const x = (r() - 0.5) * (WORLD_HALF * 1.95);
+    const z = (r() - 0.5) * (WORLD_HALF * 1.95);
     if (Math.abs(x) < 385 && Math.abs(z) < 385) continue;
     if (x > 360 && Math.abs(z) < 340) continue; // harbor
+    const bio = biomeAt(x, z);
+    if (bio.airport > 0.05) continue;
+    if (Math.hypot(x - TOWN.x, z - TOWN.z) < TOWN.r * 0.75) continue;
     const h = terrainHeight(x, z);
-    if (h < 0.8) continue;
-    if (nearestCountryRoad(x, z).dist < 10) continue;
-    const s = 0.9 + r() * 0.8;
-    treeMats.push(new THREE.Matrix4().compose(new THREE.Vector3(x, h - 0.2, z), quat(r() * 6.28), new THREE.Vector3(s, s * (0.9 + r() * 0.5), s)));
+    if (h < 0.8 || h > 150) continue;
+    if (nearestCountryRoad(x, z).dist < 11) continue;
+    if (bio.desert > 0.5) {
+      if (r() > 0.18) continue;
+      const s = 0.8 + r() * 0.7;
+      cactusMats.push(new THREE.Matrix4().compose(new THREE.Vector3(x, h - 0.1, z), quat(r() * 6.28), new THREE.Vector3(s, s, s)));
+      col.addBox(x, z, 0.6, 0.6, h - 1, h + 3, 'wood');
+      continue;
+    }
+    // density: forests and mountain slopes are thick, open fields sparse
+    const dens = 0.12 + bio.forest * 0.75 + smoothstep(-500, -900, z) * 0.45 + (x < -380 ? 0.05 : 0);
+    if (r() > dens) continue;
+    const s = 0.9 + r() * 0.8 + bio.forest * 0.4;
+    treeMats.push(new THREE.Matrix4().compose(new THREE.Vector3(x, h - 0.2, z), quat(r() * 6.28), new THREE.Vector3(s, s * (0.9 + r() * 0.6), s)));
     col.addBox(x, z, 0.7, 0.7, h - 1, h + 6, 'wood');
   }
   // beach palms
@@ -679,6 +767,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
   addInstanced(root, new THREE.CylinderGeometry(0.16, 0.26, 3.2, 6).translate(0, 1.6, 0), trunkMat, treeMats, true);
   addInstanced(root, treeCanopyGeometry(), leafMat, treeMats, true);
   addInstanced(root, palmTrunkGeometry(), new THREE.MeshStandardMaterial({ color: 0x8a6d4f, roughness: 0.9 }), palmMats, true);
+  addInstanced(root, cactusGeometry(), new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.85, flatShading: true }), cactusMats, true);
   addInstanced(root, palmLeavesGeometry(), new THREE.MeshStandardMaterial({ color: 0x5b8f3c, roughness: 0.8, side: THREE.DoubleSide, flatShading: true }), palmMats, true);
   addInstanced(root, signalGeometry(), new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.6, metalness: 0.5 }), signalMats, true);
   const signalLightMat = new THREE.MeshStandardMaterial({ color: 0x33ff88, emissive: 0x22ff66, emissiveIntensity: 1.5 });
@@ -898,6 +987,296 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     }
   }
 
+  // ---------------------------------------------------------- country road markings
+  {
+    const yellow: THREE.BufferGeometry[] = [];
+    const white: THREE.BufferGeometry[] = [];
+    const strip = (pts: [number, number, number][], off: number, w: number, dash: number, gap: number) => {
+      // build quads along the polyline at a lateral offset; dash=0 means continuous
+      const out: THREE.BufferGeometry[] = [];
+      let along = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, , az] = pts[i];
+        const [bx, , bz] = pts[i + 1];
+        const L = Math.hypot(bx - ax, bz - az);
+        if (L < 0.01) continue;
+        const ux = (bx - ax) / L;
+        const uz = (bz - az) / L;
+        const nx = -uz;
+        const nz = ux;
+        const step = 4;
+        for (let t = 0; t < L; t += step) {
+          const pos = along + t;
+          if (dash > 0 && pos % (dash + gap) > dash) continue;
+          const t1 = Math.min(L, t + step);
+          const x0 = ax + ux * t + nx * off;
+          const z0 = az + uz * t + nz * off;
+          const x1 = ax + ux * t1 + nx * off;
+          const z1 = az + uz * t1 + nz * off;
+          const y0 = terrainHeight(x0, z0) + 0.09;
+          const y1 = terrainHeight(x1, z1) + 0.09;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute(
+            'position',
+            new THREE.Float32BufferAttribute(
+              [x0 - nx * w, y0, z0 - nz * w, x0 + nx * w, y0, z0 + nz * w, x1 - nx * w, y1, z1 - nz * w, x1 + nx * w, y1, z1 + nz * w],
+              3,
+            ),
+          );
+          g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
+          g.setIndex([0, 2, 1, 1, 2, 3]);
+          out.push(g);
+        }
+        along += L;
+      }
+      return out;
+    };
+    for (const road of COUNTRY_ROADS) {
+      const pts = road.pts.filter(([x, , z]) => Math.abs(x) > 375 || Math.abs(z) > 375);
+      if (pts.length < 2) continue;
+      if (road.highway) {
+        yellow.push(...strip(pts, -0.25, 0.1, 0, 0), ...strip(pts, 0.25, 0.1, 0, 0));
+        white.push(...strip(pts, 3.8, 0.08, 4, 8), ...strip(pts, -3.8, 0.08, 4, 8));
+        white.push(...strip(pts, road.width / 2 - 0.6, 0.1, 0, 0), ...strip(pts, -road.width / 2 + 0.6, 0.1, 0, 0));
+      } else {
+        yellow.push(...strip(pts, 0, 0.09, 3, 5));
+      }
+    }
+    const mk = (geos: THREE.BufferGeometry[], color: number) => {
+      if (!geos.length) return;
+      const g = merge(geos);
+      const me = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+      me.receiveShadow = true;
+      root.add(me);
+    };
+    mk(yellow, 0xe2b53a);
+    mk(white, 0xe9e9e4);
+  }
+
+  // ---------------------------------------------------------- gas stations
+  {
+    const canopyMat = new THREE.MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.5, emissive: 0xffffff, emissiveIntensity: 0 });
+    nightMaterials.push({ mat: canopyMat, max: 0.5 });
+    const stripeMat = new THREE.MeshStandardMaterial({ color: 0xd62828, roughness: 0.5 });
+    const pumpMat = new THREE.MeshStandardMaterial({ color: 0x2b2d42, roughness: 0.5, metalness: 0.3 });
+    for (const gs of GAS_STATIONS) {
+      const fx = Math.sin(gs.yaw);
+      const fz = Math.cos(gs.yaw);
+      const cx = gs.x + fx * 17;
+      const cz = gs.z + fz * 17;
+      const y = terrainHeight(cx, cz);
+      const grp = new THREE.Group();
+      grp.position.set(cx, y, cz);
+      grp.rotation.y = gs.yaw;
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(18, 0.7, 12), canopyMat);
+      roof.position.y = 5.2;
+      const band = new THREE.Mesh(new THREE.BoxGeometry(18.1, 0.35, 12.1), stripeMat);
+      band.position.y = 4.85;
+      grp.add(roof, band);
+      for (const [px, pz] of [
+        [-6, -4],
+        [6, -4],
+        [-6, 4],
+        [6, 4],
+      ]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.4, 4.8, 0.4), canopyMat);
+        post.position.set(px, 2.4, pz);
+        grp.add(post);
+        const wx = cx + Math.cos(gs.yaw) * px + Math.sin(gs.yaw) * pz;
+        const wz = cz - Math.sin(gs.yaw) * px + Math.cos(gs.yaw) * pz;
+        col.addBox(wx, wz, 0.5, 0.5, y - 1, y + 5, 'metal');
+      }
+      for (const px of [-3, 3]) {
+        const pump = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.7, 0.6), pumpMat);
+        pump.position.set(px, 0.85, 0);
+        pump.castShadow = true;
+        grp.add(pump);
+        const wx = cx + Math.cos(gs.yaw) * px;
+        const wz = cz - Math.sin(gs.yaw) * px;
+        col.addBox(wx, wz, 1, 1, y - 1, y + 1.7, 'metal');
+      }
+      grp.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+      root.add(grp);
+      const t = signTexture('快加油 24H', '#d62828', '#ffffff', 512, 128);
+      const sm = new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.2 });
+      nightMaterials.push({ mat: sm, max: 1 });
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.5), sm);
+      sign.position.set(0, 5.2, 6.07);
+      grp.add(sign);
+    }
+  }
+
+  // ---------------------------------------------------------- airport
+  {
+    const ay = AIRPORT.y + 0.04;
+    const rwLen = 760;
+    const rwW = 46;
+    const rwX = (AIRPORT.minX + AIRPORT.maxX) / 2;
+    const rwZ = 862;
+    const asph = new THREE.MeshStandardMaterial({ map: tex.asphalt, color: 0x9a9a9a, roughness: 0.85 });
+    wet(asph, 0.25, 0.65);
+    const rg = new THREE.PlaneGeometry(rwLen, rwW);
+    rg.rotateX(-Math.PI / 2);
+    const ruv = rg.attributes.uv as THREE.BufferAttribute;
+    for (let i = 0; i < ruv.count; i++) ruv.setXY(i, (ruv.getX(i) * rwLen) / 12, (ruv.getY(i) * rwW) / 12);
+    const rw = new THREE.Mesh(rg, asph);
+    rw.position.set(rwX, ay, rwZ);
+    rw.receiveShadow = true;
+    root.add(rw);
+    // apron / taxiway
+    const ag = new THREE.PlaneGeometry(560, 60);
+    ag.rotateX(-Math.PI / 2);
+    const auv = ag.attributes.uv as THREE.BufferAttribute;
+    for (let i = 0; i < auv.count; i++) auv.setXY(i, (auv.getX(i) * 560) / 12, (auv.getY(i) * 60) / 12);
+    const apron = new THREE.Mesh(ag, asph);
+    apron.position.set(-1060, ay - 0.01, 795);
+    apron.receiveShadow = true;
+    root.add(apron);
+    // runway markings
+    const markMat = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2 });
+    const marks: THREE.BufferGeometry[] = [];
+    for (let x = rwX - rwLen / 2 + 40; x < rwX + rwLen / 2 - 40; x += 30) marks.push(new THREE.PlaneGeometry(14, 0.9).rotateX(-Math.PI / 2).translate(x, ay + 0.02, rwZ));
+    for (const end of [-1, 1])
+      for (let k = -4; k <= 4; k++) {
+        if (k === 0) continue;
+        marks.push(new THREE.PlaneGeometry(26, 1.8).rotateX(-Math.PI / 2).translate(rwX + end * (rwLen / 2 - 20), ay + 0.02, rwZ + k * 4.4));
+      }
+    for (const side of [-1, 1]) marks.push(new THREE.PlaneGeometry(rwLen - 10, 0.6).rotateX(-Math.PI / 2).translate(rwX, ay + 0.02, rwZ + side * (rwW / 2 - 1.5)));
+    root.add(new THREE.Mesh(merge(marks), markMat));
+    // runway edge lights
+    const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffe3a0, emissiveIntensity: 0 });
+    nightMaterials.push({ mat: lightMat, max: 4 });
+    const lm: THREE.Matrix4[] = [];
+    for (let x = rwX - rwLen / 2; x <= rwX + rwLen / 2; x += 30) for (const side of [-1, 1]) lm.push(new THREE.Matrix4().makeTranslation(x, ay + 0.2, rwZ + side * (rwW / 2 + 1)));
+    addInstanced(root, new THREE.BoxGeometry(0.4, 0.4, 0.4), lightMat, lm, false);
+    // parked airliners on the apron
+    for (const [x, livery] of [
+      [-1200, 0x1d4ed8],
+      [-1060, 0xd62828],
+      [-920, 0x0f766e],
+    ] as [number, number][]) {
+      const plane = airliner(livery);
+      plane.position.set(x, ay, 792);
+      plane.rotation.y = Math.PI / 2;
+      root.add(plane);
+      col.addBox(x, 792, 40, 4.6, ay, ay + 6.5, 'metal');
+      col.addBox(x + 2, 792, 7, 34, ay + 1.5, ay + 3, 'metal');
+    }
+    // control tower cab
+    const cab = new THREE.Mesh(
+      new THREE.CylinderGeometry(7, 6, 5, 10),
+      new THREE.MeshStandardMaterial({ color: 0x1b2633, metalness: 0.9, roughness: 0.1, emissive: 0x9cc8ff, emissiveIntensity: 0 }),
+    );
+    nightMaterials.push({ mat: cab.material as THREE.MeshStandardMaterial, max: 0.6 });
+    cab.position.set(-800, terrainHeight(-800, 745) + 38.5, 745);
+    root.add(cab);
+    // helipad
+    helipadMesh(root, -760, 715, ay);
+  }
+  helipadMesh(root, 150, -108, CURB_H + 0.02); // hospital
+
+  // ---------------------------------------------------------- summit radio tower
+  {
+    const x = -330;
+    const z = -1180;
+    const y = terrainHeight(x, z);
+    const m = new THREE.MeshStandardMaterial({ color: 0xc0392b, metalness: 0.5, roughness: 0.5 });
+    const m2 = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, metalness: 0.5, roughness: 0.5 });
+    const tower = new THREE.Group();
+    for (let k = 0; k < 6; k++) {
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.9 - k * 0.12, 1.1 - k * 0.12, 10, 4, 1, true), k % 2 ? m2 : m);
+      seg.position.y = 5 + k * 10;
+      tower.add(seg);
+    }
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 6), new THREE.MeshStandardMaterial({ color: 0xff2222, emissive: 0xff0000, emissiveIntensity: 2 }));
+    beacon.position.y = 61;
+    tower.add(beacon);
+    tower.position.set(x, y, z);
+    tower.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+    root.add(tower);
+    col.addBox(x, z, 2.4, 2.4, y - 1, y + 60, 'metal');
+  }
+
+  // ---------------------------------------------------------- lake dock & boats
+  {
+    const wood = new THREE.MeshStandardMaterial({ color: 0x8c6a4a, roughness: 0.9 });
+    const dx = LAKE.x - 110;
+    const dz = LAKE.z - 95;
+    const dock = new THREE.Mesh(new THREE.BoxGeometry(4, 0.4, 40), wood);
+    dock.position.set(dx, 0.4, dz + 10);
+    dock.rotation.y = 0.75;
+    dock.castShadow = dock.receiveShadow = true;
+    root.add(dock);
+    for (const [bx, bz, c] of [
+      [LAKE.x - 60, LAKE.z - 40, 0xf2f2f2],
+      [LAKE.x + 20, LAKE.z + 30, 0xd62828],
+    ] as [number, number, number][]) {
+      const boat = new THREE.Mesh(new THREE.CapsuleGeometry(1.2, 4, 4, 8).rotateX(Math.PI / 2).scale(1, 0.5, 1), new THREE.MeshStandardMaterial({ color: c, roughness: 0.5 }));
+      boat.position.set(bx, SEA_LEVEL + 0.2, bz);
+      boat.rotation.y = bx * 0.01;
+      root.add(boat);
+    }
+  }
+
+  // ---------------------------------------------------------- highway signs
+  {
+    const signs: [number, number, number, string][] = [
+      [-470, -212, -Math.PI / 2, '塵水鎮 ← 2 km　機場 ↙'],
+      [-1120, -125, -Math.PI / 2, '塵水鎮 歡迎光臨'],
+      [-1225, 140, Math.PI, '索拉國際機場 →'],
+      [-740, -1430, -Math.PI / 2.4, '北嶺山脈 · 轉播站 ↑'],
+      [830, -1070, Math.PI * 0.8, '鏡湖山莊 →'],
+      [560, -345, Math.PI / 3, '索拉港市區 →'],
+    ];
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.6, roughness: 0.4 });
+    for (const [x, z, yaw, text] of signs) {
+      const t = signTexture(text, '#0f5a32', '#ffffff', 1024, 192);
+      const sm = new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.05 });
+      nightMaterials.push({ mat: sm, max: 0.5 });
+      const y = terrainHeight(x, z);
+      const g = new THREE.Group();
+      const board = new THREE.Mesh(new THREE.PlaneGeometry(9, 1.7), sm);
+      board.position.y = 6;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(9.2, 1.9, 0.15), poleMat);
+      back.position.set(0, 6, -0.1);
+      const p1 = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 6, 6), poleMat);
+      p1.position.set(-3.5, 3, -0.1);
+      const p2 = p1.clone();
+      p2.position.x = 3.5;
+      g.add(board, back, p1, p2);
+      g.position.set(x, y, z);
+      g.rotation.y = yaw;
+      root.add(g);
+    }
+  }
+
+  // ---------------------------------------------------------- town water tower
+  {
+    const x = -1300;
+    const z = -230;
+    const y = terrainHeight(x, z);
+    const m = new THREE.MeshStandardMaterial({ color: 0xb5b9bd, metalness: 0.6, roughness: 0.4 });
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 7, 16), m);
+    tank.position.set(x, y + 19, z);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(5.3, 2.5, 16), m);
+    cap.position.set(x, y + 23.7, z);
+    root.add(tank, cap);
+    for (const [dx, dz] of [
+      [-3, -3],
+      [3, -3],
+      [-3, 3],
+      [3, 3],
+    ]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 16, 6), m);
+      leg.position.set(x + dx, y + 8, z + dz);
+      root.add(leg);
+    }
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(8, 1.6), new THREE.MeshStandardMaterial({ map: signTexture('塵水鎮', 'rgba(0,0,0,0)', '#7a2e1a', 512, 128), transparent: true }));
+    label.position.set(x, y + 19, z + 5.05);
+    root.add(label);
+    col.addBox(x, z, 7, 7, y - 1, y + 25, 'metal');
+  }
+
   // ---------------------------------------------------------- update hooks
   let night = 0;
   let wetness = 0;
@@ -981,6 +1360,79 @@ function palmLeavesGeometry() {
   }
   return mergeGeometries(parts)!;
 }
+function airliner(livery: number) {
+  const g = new THREE.Group();
+  const white = new THREE.MeshStandardMaterial({ color: 0xf4f6f7, metalness: 0.3, roughness: 0.35 });
+  const tail = new THREE.MeshStandardMaterial({ color: livery, roughness: 0.4 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1b2633, metalness: 0.8, roughness: 0.1 });
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(2.2, 34, 6, 16).rotateX(Math.PI / 2), white);
+  body.position.y = 4.2;
+  const stripe = new THREE.Mesh(new THREE.CylinderGeometry(2.23, 2.23, 30, 16, 1, true, -0.4, 0.8).rotateX(Math.PI / 2), tail);
+  stripe.position.y = 4.2;
+  stripe.rotation.z = Math.PI / 2;
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(34, 0.5, 6), white);
+  wing.position.set(0, 3.2, 1);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.4, 7, 5), tail);
+  fin.position.set(0, 8, -16.5);
+  const stab = new THREE.Mesh(new THREE.BoxGeometry(12, 0.3, 3.5), white);
+  stab.position.set(0, 4.8, -17);
+  const cockpit = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.7, 1.4), dark);
+  cockpit.position.set(0, 5.4, 17.6);
+  g.add(body, stripe, wing, fin, stab, cockpit);
+  for (const sx of [-1, 1]) {
+    const eng = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.2, 4.5, 12).rotateX(Math.PI / 2), white);
+    eng.position.set(sx * 8, 2.1, 2.5);
+    g.add(eng);
+    const gear = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.6, 10).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+    gear.position.set(sx * 2.5, 0.6, 0);
+    g.add(gear);
+  }
+  g.traverse((o) => {
+    (o as THREE.Mesh).castShadow = true;
+    (o as THREE.Mesh).receiveShadow = true;
+  });
+  return g;
+}
+
+function helipadMesh(root: THREE.Group, x: number, z: number, y: number) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#3a3d40';
+  ctx.beginPath();
+  ctx.arc(128, 128, 126, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#f2c94c';
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.arc(128, 128, 110, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 150px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('H', 128, 136);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(
+    new THREE.CircleGeometry(9, 32).rotateX(-Math.PI / 2),
+    new THREE.MeshStandardMaterial({ map: t, transparent: true, polygonOffset: true, polygonOffsetFactor: -3, roughness: 0.8 }),
+  );
+  m.position.set(x, y + 0.03, z);
+  m.receiveShadow = true;
+  root.add(m);
+}
+
+function cactusGeometry() {
+  return mergeGeometries([
+    new THREE.CylinderGeometry(0.28, 0.32, 3.2, 7).translate(0, 1.6, 0),
+    new THREE.CylinderGeometry(0.18, 0.18, 1.2, 6).translate(0.55, 1.9, 0),
+    new THREE.CylinderGeometry(0.18, 0.18, 0.6, 6).rotateZ(Math.PI / 2).translate(0.3, 1.3, 0),
+    new THREE.CylinderGeometry(0.16, 0.16, 0.9, 6).translate(-0.5, 2.3, 0),
+    new THREE.CylinderGeometry(0.16, 0.16, 0.55, 6).rotateZ(Math.PI / 2).translate(-0.27, 1.85, 0),
+  ])!;
+}
+
 function signalGeometry() {
   return mergeGeometries([
     new THREE.CylinderGeometry(0.12, 0.14, 6, 8).translate(0, 3, 0),

@@ -246,6 +246,7 @@ function Speedo() {
   const name = useHud((s) => s.vehicleName);
   const vhp = useHud((s) => s.vehicleHp);
   const radio = useHud((s) => s.radio);
+  const alt = useHud((s) => s.altitude);
   if (!inVehicle) return null;
   return (
     <div className={`absolute select-none ${TOUCH ? 'left-1/2 -translate-x-1/2 bottom-2 text-center scale-75 origin-bottom' : 'right-4 bottom-4 text-right'}`}>
@@ -254,6 +255,7 @@ function Speedo() {
         {speed}
         <span className="text-xl text-white/60 ml-1">km/h</span>
       </div>
+      {alt !== null && <div className="font-display text-2xl font-bold text-sky-200 tabular-nums">高度 {alt} m</div>}
       <div className="text-sm font-bold text-white/90">{name}</div>
       <div className="mt-1 ml-auto h-1.5 w-40 rounded-full bg-black/60 overflow-hidden">
         <div className="h-full" style={{ width: `${vhp * 100}%`, background: vhp < 0.3 ? '#ef4444' : vhp < 0.6 ? '#f59e0b' : '#a3e635' }} />

@@ -49,6 +49,7 @@ export interface HudState {
   focusActive: boolean;
   inVehicle: boolean;
   speedKmh: number;
+  altitude: number | null;
   vehicleName: string;
   vehicleHp: number;
   radio: string;
@@ -125,6 +126,7 @@ export const useHud = create<HudState>((set) => ({
   focusActive: false,
   inVehicle: false,
   speedKmh: 0,
+  altitude: null,
   vehicleName: '',
   vehicleHp: 1,
   radio: '',

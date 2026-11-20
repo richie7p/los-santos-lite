@@ -582,7 +582,9 @@ export class Game {
   }
 
   private respawn() {
-    const h = poi('hospital');
+    // nearest hospital to where we fell
+    const hs = POIS.filter((o) => o.kind === 'hospital');
+    const h = hs.reduce((a, b) => (Math.hypot(b.x - this.player.x, b.z - this.player.z) < Math.hypot(a.x - this.player.x, a.z - this.player.z) ? b : a));
     const p = this.player;
     p.dead = false;
     p.rig.revive();
@@ -669,6 +671,7 @@ export class Game {
     p.rig.root.visible = false;
     this.exitT = 0.4;
     this.audio.ui('open');
+    if (v.spec.flying) this.toast(this.input.touch ? '直升機：上升／下降按鈕控制高度，搖桿前後傾斜與轉向' : '直升機：空白鍵上升、Shift 下降、W/S 前進後退、A/D 轉向', 'info');
     this.hud({ vehicleName: v.spec.name });
     this.radioOn = true;
     this.audio.setRadio(this.audio.stationName !== '關閉電台');
@@ -970,7 +973,8 @@ export class Game {
     p.sprinting = wantSprint && this.stamina > 0;
     const speed = this.aiming ? 2.8 : p.sprinting ? 8.2 : 5.0;
     const swim = p.inWater ? 0.45 : 1;
-    p.move(dt, this.world, wx * speed * swim, wz * speed * swim, this.aiming ? 40 : 30, !this.aiming);
+    const impact = p.move(dt, this.world, wx * speed * swim, wz * speed * swim, this.aiming ? 40 : 30, !this.aiming) ?? 0;
+    if (impact > 13 && !p.inWater) this.combat.damageActor(p, (impact - 13) * 9, null, null, false, 'fall');
     if (this.aiming) p.yaw = lerpAngle(p.yaw, this.camYaw, damp(25, dt));
     if (playing && inp.wasPressed('Space') && !this.aiming) p.jump();
     p.aimPitch = this.camPitch + 0.08;
@@ -992,7 +996,7 @@ export class Game {
         const dz = a.z - s.z;
         const d = Math.hypot(dx, dz);
         const min = s.r + a.radius;
-        if (d < min && d > 1e-4 && a.y < v.y + v.spec.height) {
+        if (d < min && d > 1e-4 && a.y < v.y + v.spec.height && a.y + 1.8 > v.y) {
           a.x = s.x + (dx / d) * min;
           a.z = s.z + (dz / d) * min;
         }
@@ -1070,7 +1074,11 @@ export class Game {
     const playing = this.phase === 'playing' && !this.wheelOpen;
     const thr = playing ? inp.axis('KeyS', 'KeyW') : 0;
     const steer = playing ? inp.axis('KeyA', 'KeyD') : 0;
-    v.input = { throttle: thr, steer, handbrake: playing && inp.isDown('Space') };
+    if (v.spec.flying) {
+      const up = playing && inp.isDown('Space') ? 1 : 0;
+      const down = playing && (inp.isDown('ShiftLeft') || inp.isDown('ControlLeft') || inp.isDown('KeyC')) ? 1 : 0;
+      v.input = { throttle: thr, steer, handbrake: false, lift: up - down };
+    } else v.input = { throttle: thr, steer, handbrake: playing && inp.isDown('Space') };
     p.x = v.x;
     p.y = v.y;
     p.z = v.z;
@@ -1173,7 +1181,7 @@ export class Game {
       for (const a of this.actors) {
         if (a.vehicle || (a.dead && sp < 3)) continue;
         if (Math.abs(a.x - v.x) > 5 || Math.abs(a.z - v.z) > 5) continue;
-        if (a.y > v.y + v.spec.height + 0.3) continue;
+        if (a.y > v.y + v.spec.height + 0.3 || a.y + 1.8 < v.y) continue;
         v.samples(samplesA);
         for (const s of samplesA) {
           const dx = a.x - s.x;
@@ -1208,7 +1216,7 @@ export class Game {
 
   private updateHeadlight() {
     const v = this.player.vehicle;
-    if (!v || this.env.night < 0.35 || v.destroyed) {
+    if (!v || this.env.night < 0.35 || v.destroyed || v.spec.flying) {
       this.headlight.intensity = 0;
       return;
     }
@@ -1235,8 +1243,9 @@ export class Game {
         this.camPitch = lerp(this.camPitch, -0.16, damp(1.5, rawDt));
       }
       const len = v.spec.length;
-      const dist = [4.2 + len * 0.95, 3 + len * 0.7, 6 + len * 1.3][this.camDistMode];
-      const pivot = tmpV.set(v.x, v.y + v.spec.height + 0.55, v.z);
+      const fly = v.spec.flying ? 1.25 : 1;
+      const dist = [4.2 + len * 0.95, 3 + len * 0.7, 6 + len * 1.3][this.camDistMode] * fly;
+      const pivot = tmpV.set(v.x, v.y + v.spec.height + (v.spec.flying ? 1.5 : 0.55), v.z);
       this.camFollow.lerp(pivot, damp(14, rawDt));
       const cp = Math.cos(pitch);
       const dx = Math.sin(this.camYaw) * cp;
@@ -1319,7 +1328,7 @@ export class Game {
       const d = Math.hypot(o.x - this.focus.x, o.z - this.focus.z);
       siren = Math.max(siren, 1 - d / 140);
     }
-    const speed = v ? Math.abs(v.forwardSpeed) : 0;
+    const speed = v ? (v.spec.flying ? v.rotor * v.spec.maxSpeed * 0.6 : Math.abs(v.forwardSpeed)) : 0;
     const gearPos = v ? (speed / v.spec.maxSpeed) * 4 : 0;
     const rpm = v ? (gearPos % 1) * 0.6 + Math.min(1, gearPos / 4) * 0.4 : 0;
     const slip = v && !v.airborne ? Math.max(Math.abs(v.lateralSlip) / 10, v.input.handbrake && speed > 6 ? 0.7 : 0) : 0;
@@ -1384,7 +1393,8 @@ export class Game {
       focus: this.focusMeter,
       focusActive: this.focusActive,
       inVehicle: !!v,
-      speedKmh: v ? kmh(v.forwardSpeed) : 0,
+      speedKmh: v ? kmh(v.spec.flying ? v.speed : v.forwardSpeed) : 0,
+      altitude: v?.spec.flying ? Math.max(0, Math.round(v.y - groundHeight(v.x, v.z))) : null,
       vehicleName: v?.spec.name ?? '',
       vehicleHp: v ? clamp(v.hp / v.spec.hp, 0, 1) : 1,
       prompt,

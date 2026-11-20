@@ -1,13 +1,15 @@
 /** Ambient traffic, parked cars and AI driving (lane following & pursuit). */
 import { angleDiff, clamp, pick, rand } from '../core/math';
 import { CIVILIAN_TYPES, type VehicleType } from '../data';
+import { FIXED_VEHICLES } from '../content';
 import type { Vehicle } from '../entities/vehicle';
-import { findPath, GRID_N, HALF_ROAD, LINES, nearestNode, ROAD_NODES } from '../world/layout';
+import { findPath, GRID_N, HALF_ROAD, LINES, linkWidth, nearestNode, ROAD_NODES, TOWN } from '../world/layout';
 import type { Game } from '../Game';
 
 const TURN_IN = 11;
 
 interface ParkSlot {
+  type?: VehicleType;
   x: number;
   z: number;
   yaw: number;
@@ -36,6 +38,27 @@ export class Traffic {
           if (Math.random() < 0.5) this.slots.push({ x: s, z: a + side * off, yaw: side > 0 ? Math.PI / 2 : -Math.PI / 2, vehicle: null, cooldown: 0 });
         }
       }
+    // Dustwater main street (both sides of the highway) and the airport car park
+    for (let x = TOWN.x - 130; x < TOWN.x + 130; x += 14) {
+      if (Math.random() < 0.45) continue;
+      const rz = x < -1250 ? -150 + ((x + 1400) / 150) * 50 : -100 + ((x + 1250) / 150) * -10;
+      const side = Math.random() < 0.5 ? 1 : -1;
+      this.slots.push({ x, z: rz + side * 11, yaw: side > 0 ? Math.PI / 2 : -Math.PI / 2, vehicle: null, cooldown: 0 });
+    }
+    for (let x = -1180; x < -1020; x += 6) if (Math.random() < 0.6 && Math.abs(x + 1060) > 4) this.slots.push({ x, z: 684, yaw: 0, vehicle: null, cooldown: 0 });
+    for (const f of FIXED_VEHICLES) this.slots.push({ type: f.type, x: f.x, z: f.z, yaw: f.yaw, vehicle: null, cooldown: 0 });
+  }
+
+  /** Lane centre offset for a road link (keeps the inner/outer choice). */
+  private laneFor(a: number, b: number, outer: boolean) {
+    const w = linkWidth(a, b);
+    if (w >= 16) return outer ? 5.8 : 2.2;
+    if (w >= 14) return outer ? 5.0 : 1.9;
+    return w * 0.26;
+  }
+  private cruiseFor(a: number, b: number) {
+    const w = linkWidth(a, b);
+    return w >= 16 ? 24 : w >= 14 ? 12 : 17;
   }
 
   update(dt: number) {
@@ -56,8 +79,8 @@ export class Traffic {
         }
       } else {
         s.cooldown -= dt;
-        if (d < 170 && d > 60 && s.cooldown <= 0) {
-          const v = g.spawnVehicle(pick(CIVILIAN_TYPES), s.x, s.z, s.yaw);
+        if (d < 170 && (d > 60 || s.type) && s.cooldown <= 0) {
+          const v = g.spawnVehicle(s.type ?? pick(CIVILIAN_TYPES), s.x, s.z, s.yaw);
           v.ai.kind = 'parked';
           v.parkedSlot = i;
           s.vehicle = v;
@@ -108,7 +131,9 @@ export class Traffic {
     const g = this.g;
     const cam = g.camera;
     for (let attempt = 0; attempt < 12; attempt++) {
-      const a = ROAD_NODES[Math.floor(Math.random() * ROAD_NODES.length)];
+      const near = ROAD_NODES.filter((n) => Math.abs(n.x - g.focus.x) < maxD + 170 && Math.abs(n.z - g.focus.z) < maxD + 170);
+      if (!near.length) return null;
+      const a = pick(near);
       const b = ROAD_NODES[pick(a.links)];
       const t = rand(0.25, 0.75);
       const dx = b.x - a.x;
@@ -116,7 +141,8 @@ export class Traffic {
       const L = Math.hypot(dx, dz);
       const ux = dx / L;
       const uz = dz / L;
-      const lane = Math.random() < 0.5 ? 1.9 : 5.0;
+      const outer = Math.random() < 0.5;
+      const lane = this.laneFor(a.id, b.id, outer);
       const x = a.x + dx * t - uz * lane;
       const z = a.z + dz * t + ux * lane;
       const d = Math.hypot(x - g.focus.x, z - g.focus.z);
@@ -134,7 +160,9 @@ export class Traffic {
       v.ai.lane = lane;
       v.ai.fromNode = a.id;
       v.ai.toNode = b.id;
-      v.ai.cruise = type === 'police' ? 14 : rand(10, 14);
+      v.ai.outer = outer;
+      v.ai.pers = rand(0.85, 1.1);
+      v.ai.cruise = this.cruiseFor(a.id, b.id) * v.ai.pers * (type === 'police' ? 1.15 : 1);
       v.crew = type === 'police' ? 'police' : type === 'armored' ? 'enemy' : 'civilian';
       v.crewCount = type === 'police' ? 2 : 1;
       v.ai.wps = [this.segEnd(a.id, b.id, lane)];
@@ -153,7 +181,7 @@ export class Traffic {
     const L = Math.hypot(b.x - a.x, b.z - a.z);
     const ux = (b.x - a.x) / L;
     const uz = (b.z - a.z) / L;
-    return { x: a.x + ux * TURN_IN - uz * lane, z: a.z + uz * TURN_IN + ux * lane, turn: true };
+    return { x: a.x + ux * TURN_IN - uz * lane, z: a.z + uz * TURN_IN + ux * lane, turn: 1 };
   }
   private segEnd(aId: number, bId: number, lane: number) {
     const a = ROAD_NODES[aId];
@@ -168,7 +196,14 @@ export class Traffic {
     const to = ROAD_NODES[v.ai.toNode];
     const opts = to.links.filter((l) => l !== v.ai.fromNode);
     const next = opts.length ? pick(opts) : v.ai.fromNode;
-    v.ai.wps.push(this.segStart(to.id, next, v.ai.lane));
+    const from = ROAD_NODES[v.ai.fromNode];
+    const nn = ROAD_NODES[next];
+    const turn = Math.abs(angleDiff(Math.atan2(to.x - from.x, to.z - from.z), Math.atan2(nn.x - to.x, nn.z - to.z)));
+    v.ai.lane = this.laneFor(to.id, next, v.ai.outer);
+    if (v.ai.cruise < 18 || linkWidth(to.id, next) >= 16) v.ai.cruise = this.cruiseFor(to.id, next) * v.ai.pers * (v.type === 'police' ? 1.15 : 1);
+    const st = this.segStart(to.id, next, v.ai.lane);
+    st.turn = turn;
+    v.ai.wps.push(st);
     v.ai.wps.push(this.segEnd(to.id, next, v.ai.lane));
     v.ai.fromNode = to.id;
     v.ai.toNode = next;
@@ -196,7 +231,7 @@ export class Traffic {
     let cruise = ai.cruise;
     if (Math.abs(diff) > 0.35) cruise = Math.min(cruise, 7);
     const next = ai.wps[ai.wp + 1];
-    if (target.turn === undefined && next?.turn && d < 16) cruise = Math.min(cruise, 8);
+    if (target.turn === undefined && next?.turn !== undefined && next.turn > 0.35 && d < 16 + cruise * 0.8) cruise = Math.min(cruise, next.turn > 1 ? 8 : 13);
     cruise = Math.min(cruise, this.obstacleLimit(v, dt));
     this.applyDrive(v, diff, cruise, dt);
   }
