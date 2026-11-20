@@ -1,7 +1,39 @@
 /** Procedural humanoid with hierarchical rig and procedural animation. */
 import * as THREE from 'three';
 import { clamp, damp, lerp, pick } from '../core/math';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { WeaponId } from '../data';
+
+// ---- faces: eyes, brows, nose and mouth merged into one vertex-coloured mesh
+const faceMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 });
+const faceCache = new Map<string, THREE.BufferGeometry>();
+function faceGeometry(skin: number, hair: number) {
+  const key = `${skin}_${hair}`;
+  let g = faceCache.get(key);
+  if (g) return g;
+  const col = (geo: THREE.BufferGeometry, c: number) => {
+    const color = new THREE.Color(c);
+    const n = geo.attributes.position.count;
+    const arr = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) color.toArray(arr, i * 3);
+    geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+    geo.deleteAttribute('uv');
+    return geo.index ? geo.toNonIndexed() : geo;
+  };
+  const nose = new THREE.Color(skin).multiplyScalar(0.9).getHex();
+  const lips = new THREE.Color(skin).lerp(new THREE.Color(0x9b4a3c), 0.45).getHex();
+  const parts: THREE.BufferGeometry[] = [];
+  for (const sx of [-1, 1]) {
+    parts.push(col(new THREE.SphereGeometry(0.019, 8, 6).scale(1.2, 0.85, 0.6).translate(sx * 0.04, 0.022, 0.1), 0xf4f1ec));
+    parts.push(col(new THREE.SphereGeometry(0.011, 6, 5).translate(sx * 0.04, 0.022, 0.111), 0x2a1d14));
+    parts.push(col(new THREE.BoxGeometry(0.036, 0.008, 0.01).rotateZ(sx * -0.12).translate(sx * 0.04, 0.05, 0.106), hair));
+  }
+  parts.push(col(new THREE.ConeGeometry(0.014, 0.04, 6).rotateX(-Math.PI / 2 + 0.25).translate(0, -0.005, 0.12), nose));
+  parts.push(col(new THREE.BoxGeometry(0.036, 0.008, 0.01).translate(0, -0.045, 0.106), lips));
+  g = mergeGeometries(parts)!;
+  faceCache.set(key, g);
+  return g;
+}
 
 export interface Outfit {
   skin: number;
@@ -233,12 +265,8 @@ export class CharacterRig {
     const headM = this.m(G.head, skin);
     headM.scale.set(0.95, 1.08, 1);
     this.head.add(headM);
-    const eyeM = mat(0x111111, 0.4);
-    for (const s of [-1, 1]) {
-      const e = this.m(G.eye, eyeM, false);
-      e.position.set(s * 0.04, 0.02, 0.105);
-      this.head.add(e);
-    }
+    const face = new THREE.Mesh(faceGeometry(o.skin, o.hair), faceMat);
+    this.head.add(face);
     if (o.hairStyle === 'short' || o.hairStyle === 'bun') {
       const h = this.m(G.hairShort, hair);
       h.position.y = 0.012;

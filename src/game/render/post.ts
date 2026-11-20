@@ -6,6 +6,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 
 const GradeShader = {
   uniforms: {
@@ -60,6 +61,8 @@ export class PostFX {
   bloom: UnrealBloomPass;
   grade: ShaderPass;
   smaa: SMAAPass | null = null;
+  /** Ground-truth ambient occlusion (contact shadows); high quality only. */
+  gtao: GTAOPass;
   enabled = true;
 
   constructor(
@@ -72,6 +75,12 @@ export class PostFX {
   ) {
     this.composer = new EffectComposer(renderer);
     this.composer.addPass(new RenderPass(scene, camera));
+    this.gtao = new GTAOPass(scene, camera, w, h);
+    this.gtao.updateGtaoMaterial({ radius: 1.6, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: 12, distanceFallOff: 1 });
+    this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
+    this.gtao.blendIntensity = 0.9;
+    this.gtao.enabled = false;
+    this.composer.addPass(this.gtao);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.5, 0.93);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -101,5 +110,6 @@ export class PostFX {
   dispose() {
     this.composer.dispose();
     this.bloom.dispose();
+    this.gtao.dispose();
   }
 }

@@ -10,6 +10,7 @@ import { type Outfit, playerOutfit, policeOutfit, randomOutfit, gangOutfit } fro
 import { Vehicle, type VehicleEvents } from './entities/vehicle';
 import { Environment } from './render/environment';
 import { FX } from './render/fx';
+import { Grass } from './render/grass';
 import { PostFX } from './render/post';
 import { AudioEngine } from './systems/audio';
 import { Combat } from './systems/combat';
@@ -57,6 +58,7 @@ export class Game {
   env!: Environment;
   post!: PostFX;
   fx!: FX;
+  grass!: Grass;
   readonly audio = new AudioEngine();
   readonly input: Input;
   actors: Actor[] = [];
@@ -185,6 +187,7 @@ export class Game {
     this.env.onThunder = (delay) => setTimeout(() => !this.disposed && this.audio.thunder(), delay * 1000);
     this.world3d = buildWorld(this.scene, this.world, this.renderer.capabilities.getMaxAnisotropy());
     this.fx = new FX(this.scene);
+    this.grass = new Grass(this.scene, this.world);
     this.combat = new Combat(this);
     this.traffic = new Traffic(this);
     this.npcs = new NPCs(this);
@@ -313,8 +316,11 @@ export class Game {
     const ratio = q === 'low' ? Math.min(dpr, 1) * 0.75 : q === 'medium' ? Math.min(dpr, 1.25) : Math.min(dpr, 1.75);
     this.renderer.setPixelRatio(ratio);
     this.renderer.shadowMap.enabled = q !== 'low';
-    this.env.setShadowQuality(q === 'high' ? 2048 : 1024, q !== 'low');
+    this.env.setShadowQuality(q === 'high' ? 4096 : 2048, q !== 'low', q === 'high' ? 130 : 95);
     this.post.enabled = q !== 'low';
+    this.post.gtao.enabled = q === 'high';
+    this.grass.enabled = q !== 'low';
+    this.env.flareEnabled = q !== 'low';
     if (this.post.smaa) this.post.smaa.enabled = q === 'high';
     this.traffic.maxCars = q === 'low' ? 14 : q === 'medium' ? 18 : 24;
     this.npcs.maxPeds = q === 'low' ? 20 : q === 'medium' ? 28 : 36;
@@ -803,6 +809,7 @@ export class Game {
       }
     }
     this.fx.update(dt);
+    this.grass.update(this.camera.position, performance.now() / 1000);
     this.updateHeadlight();
     this.updateCamera(rawDt);
     this.updateAudio();

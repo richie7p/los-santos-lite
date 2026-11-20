@@ -458,6 +458,7 @@ export function buildDetails(ctx: DetailCtx) {
       const yaw = fz !== 0 ? 0 : Math.PI / 2;
       poolRim.add(px, y + 0.06, pz, yaw, 6.6, 1, 3.6);
       poolWater.add(px, y + 0.13, pz, yaw, 6, 1, 3);
+      col.addBox(px, pz, yaw === 0 ? 6.6 : 3.6, yaw === 0 ? 3.6 : 6.6, y - 1, y + 0.13, 'building');
     }
   }
 
@@ -611,6 +612,7 @@ export function buildDetails(ctx: DetailCtx) {
     // terrace & pool on the downhill (south) side
     poolRim.add(v.x, base + 0.06, v.z + v.d / 2 + 4, 0, v.w * 0.7 + 0.6, 1, 4.6);
     poolWater.add(v.x, base + 0.13, v.z + v.d / 2 + 4, 0, v.w * 0.7, 1, 4);
+    col.addBox(v.x, v.z + v.d / 2 + 4, v.w * 0.7 + 0.6, 4.6, base - 1, base + 0.13, 'building');
     for (let k = -2; k <= 2; k++) planter.add(v.x + k * (v.w / 5), base, v.z - v.d / 2 - 2.5);
   }
   // viewpoint railing & picnic tables near the observatory

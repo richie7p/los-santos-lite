@@ -1,6 +1,7 @@
 /** Sky, sun/moon lighting, fog, environment reflections and time of day. */
 import * as THREE from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 import { clamp, lerp, smoothstep } from '../core/math';
 
 const DAY_FOG = new THREE.Color(0xa9bccb);
@@ -127,7 +128,61 @@ export class Environment {
     this.rainLines.frustumCulled = false;
     this.rainLines.visible = false;
     scene.add(this.rainLines);
+
+    // drifting cloud layer
+    this.clouds = new THREE.Mesh(
+      new THREE.PlaneGeometry(9000, 9000).rotateX(Math.PI / 2), // faces down: seen from below
+      new THREE.ShaderMaterial({
+        uniforms: {
+          tNoise: { value: tileableNoise(256) },
+          uTime: { value: 0 },
+          uCover: { value: 0.45 },
+          uRain: { value: 0 },
+          uNight: { value: 0 },
+          uSunCol: { value: new THREE.Color(1, 1, 1) },
+          uCam: { value: new THREE.Vector3() },
+        },
+        vertexShader: CLOUD_VS,
+        fragmentShader: CLOUD_FS,
+        transparent: true,
+        depthWrite: false,
+        fog: false,
+      }),
+    );
+    this.clouds.position.y = 620;
+    this.clouds.renderOrder = -1;
+    this.clouds.frustumCulled = false;
+    scene.add(this.clouds);
+
+    // sun lens flare
+    const flareTex = (inner: string, outer: string, size = 128) => {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const x = c.getContext('2d')!;
+      const g = x.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+      g.addColorStop(0, inner);
+      g.addColorStop(1, outer);
+      x.fillStyle = g;
+      x.fillRect(0, 0, size, size);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    };
+    const t0 = flareTex('rgba(255,250,235,1)', 'rgba(255,200,120,0)', 256);
+    const t1 = flareTex('rgba(255,210,150,0.35)', 'rgba(255,180,100,0)');
+    const t2 = flareTex('rgba(160,200,255,0.25)', 'rgba(120,160,255,0)');
+    this.flare = new Lensflare();
+    this.flare.addElement(new LensflareElement(t0, 380, 0, new THREE.Color(1, 0.95, 0.85)));
+    this.flare.addElement(new LensflareElement(t1, 60, 0.45));
+    this.flare.addElement(new LensflareElement(t2, 110, 0.7));
+    this.flare.addElement(new LensflareElement(t1, 40, 0.9));
+    this.flare.addElement(new LensflareElement(t2, 160, 1.05));
+    scene.add(this.flare);
   }
+
+  readonly clouds: THREE.Mesh;
+  readonly flare: Lensflare;
+  flareEnabled = true;
 
   /** Force a weather state (0 clear .. 1 storm). */
   setWeather(rain: number, instant = false) {
@@ -207,8 +262,17 @@ export class Environment {
     m.needsUpdate = true;
   }
 
-  setShadowQuality(size: number, enabled: boolean) {
+  /** Half-size of the shadow box around the player (metres). */
+  shadowExtent = 90;
+  setShadowQuality(size: number, enabled: boolean, extent = 90) {
     this.sun.castShadow = enabled;
+    this.shadowExtent = extent;
+    const sc = this.sun.shadow.camera;
+    sc.left = -extent;
+    sc.right = extent;
+    sc.top = extent;
+    sc.bottom = -extent;
+    sc.updateProjectionMatrix();
     if (size !== this.shadowSize) {
       this.shadowSize = size;
       this.sun.shadow.mapSize.set(size, size);
@@ -254,6 +318,19 @@ export class Environment {
     (this.stars.material as THREE.PointsMaterial).opacity = smoothstep(0.5, 1, this.night) * (1 - r);
     this.stars.position.copy(focus);
 
+    // clouds & flare follow the camera focus
+    const cu = (this.clouds.material as THREE.ShaderMaterial).uniforms;
+    cu.uTime.value += dt;
+    cu.uCover.value = 0.4 + r * 0.45;
+    cu.uRain.value = r;
+    cu.uNight.value = this.night;
+    cu.uSunCol.value.copy(SUN_WHITE).lerp(SUN_WARM, clamp(1 - e * 2.5, 0, 1));
+    cu.uCam.value.copy(focus);
+    this.clouds.position.x = focus.x;
+    this.clouds.position.z = focus.z;
+    this.flare.position.copy(focus).addScaledVector(this.sunDir, 3000);
+    this.flare.visible = this.flareEnabled && e > 0.02 && r < 0.3;
+
     // main light: sun by day, moon at night
     const lightDir = this.night > 0.5 ? new THREE.Vector3(-this.sunDir.x, Math.max(0.35, -this.sunDir.y), -this.sunDir.z).normalize() : this.sunDir;
     this.sun.position.copy(focus).addScaledVector(lightDir, 300);
@@ -266,7 +343,7 @@ export class Environment {
       this.sun.intensity = 2.7 * smoothstep(-0.02, 0.25, e) * (1 - r * 0.78);
     }
     // snap shadow camera to texels to avoid shimmering
-    const texel = 180 / this.shadowSize;
+    const texel = (this.shadowExtent * 2) / this.shadowSize;
     this.sun.target.position.x = Math.round(this.sun.target.position.x / texel) * texel;
     this.sun.target.position.z = Math.round(this.sun.target.position.z / texel) * texel;
     this.sun.position.x = this.sun.target.position.x + lightDir.x * 300;
@@ -302,6 +379,95 @@ export class Environment {
     (this.stars.material as THREE.Material).dispose();
     this.sun.shadow.map?.dispose();
     this.rainLines.geometry.dispose();
+    this.clouds.geometry.dispose();
+    (this.clouds.material as THREE.Material).dispose();
+    this.flare.dispose();
     (this.rainLines.material as THREE.Material).dispose();
   }
+}
+
+const CLOUD_VS = /* glsl */ `
+  varying vec3 vW;
+  void main() {
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    vW = w.xyz;
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }
+`;
+const CLOUD_FS = /* glsl */ `
+  uniform sampler2D tNoise;
+  uniform float uTime, uCover, uRain, uNight;
+  uniform vec3 uSunCol, uCam;
+  varying vec3 vW;
+  void main() {
+    vec2 uv = vW.xz / 3400.0 + vec2(uTime * 0.0035, uTime * 0.0012);
+    float n = texture2D(tNoise, uv).r * 0.55 + texture2D(tNoise, uv * 2.7 + 0.31).r * 0.3 + texture2D(tNoise, uv * 6.3 + 0.77).r * 0.15;
+    float lo = 1.0 - uCover;
+    float c = smoothstep(lo, lo + 0.26, n);
+    float thick = smoothstep(lo, 1.0, n);
+    float dist = length(vW.xz - uCam.xz);
+    float fade = 1.0 - smoothstep(2400.0, 4300.0, dist);
+    vec3 lit = mix(vec3(1.0), uSunCol, 0.45);
+    vec3 shade = mix(vec3(0.62, 0.66, 0.74), vec3(0.36, 0.38, 0.42), uRain);
+    vec3 col = mix(lit, shade, thick * 0.8);
+    col *= mix(1.0, 0.1, uNight);
+    gl_FragColor = vec4(col * 0.95, c * fade * mix(0.85, 0.97, uRain));
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
+
+/** Tileable value-noise texture (sum of periodic octaves). */
+function tileableNoise(S: number) {
+  const data = new Uint8Array(S * S * 4);
+  const vals = new Float32Array(S * S);
+  const octaves = [4, 8, 16, 32];
+  const grids = octaves.map((p) => {
+    const g = new Float32Array(p * p);
+    for (let i = 0; i < g.length; i++) g[i] = Math.random();
+    return g;
+  });
+  for (let y = 0; y < S; y++)
+    for (let x = 0; x < S; x++) {
+      let v = 0;
+      let amp = 0.5;
+      let norm = 0;
+      octaves.forEach((p, k) => {
+        const fx = (x / S) * p;
+        const fy = (y / S) * p;
+        const x0 = Math.floor(fx);
+        const y0 = Math.floor(fy);
+        const tx = fx - x0;
+        const ty = fy - y0;
+        const sx = tx * tx * (3 - 2 * tx);
+        const sy = ty * ty * (3 - 2 * ty);
+        const g = grids[k];
+        const at = (i: number, j: number) => g[(((j % p) + p) % p) * p + (((i % p) + p) % p)];
+        const a = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * sx;
+        const b = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * sx;
+        v += (a + (b - a) * sy) * amp;
+        norm += amp;
+        amp *= 0.5;
+      });
+      vals[y * S + x] = v / norm;
+    }
+  // stretch to the full 0..1 range so coverage thresholds behave predictably
+  let mn = Infinity;
+  let mx = -Infinity;
+  for (const v of vals) {
+    mn = Math.min(mn, v);
+    mx = Math.max(mx, v);
+  }
+  for (let i = 0; i < S * S; i++) {
+    const c = Math.round(((vals[i] - mn) / (mx - mn)) * 255);
+    data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = c;
+    data[i * 4 + 3] = 255;
+  }
+  const t = new THREE.DataTexture(data, S, S, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.needsUpdate = true;
+  return t;
 }

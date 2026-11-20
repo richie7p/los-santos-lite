@@ -190,6 +190,8 @@ export interface FacadeSet {
   emissive: THREE.Texture;
   /** G = roughness, B = metalness */
   orm: THREE.Texture;
+  /** Window recesses, frames and masonry relief. */
+  normal: THREE.Texture;
   /** World meters covered by one texture tile (u, v). */
   tileW: number;
   tileH: number;
@@ -553,7 +555,45 @@ export function makeFacade(style: FacadeStyle, seed: number): FacadeSet {
   const map = toTexture(cc);
   const emissive = toTexture(ec);
   const orm = toTexture(oc, false);
-  return { map, emissive, orm, tileW: spec.tileW, tileH: spec.tileH };
+  // relief: glass (metallic in the ORM map) sits recessed behind the wall,
+  // plus a little texture from the colour map (mortar lines, siding, panels)
+  const od = o.getImageData(0, 0, S, S).data;
+  const cd = c.getImageData(0, 0, S, S).data;
+  const h = new Float32Array(S * S);
+  for (let i = 0; i < S * S; i++) {
+    const glass = od[i * 4 + 2] / 255;
+    const lum = (cd[i * 4] * 0.3 + cd[i * 4 + 1] * 0.59 + cd[i * 4 + 2] * 0.11) / 255;
+    h[i] = (1 - glass) * 1.0 + lum * 0.12;
+  }
+  const normal = normalFromHeight(h, S, style === 'glass' ? 2.5 : 4);
+  return { map, emissive, orm, normal, tileW: spec.tileW, tileH: spec.tileH };
+}
+
+/** Tangent-space normal map from a tiling height field (Sobel). */
+export function normalFromHeight(h: Float32Array, S: number, strength: number) {
+  const c = canvas(S);
+  const ctx = c.getContext('2d')!;
+  const img = ctx.createImageData(S, S);
+  const at = (x: number, y: number) => h[((y + S) % S) * S + ((x + S) % S)];
+  for (let y = 0; y < S; y++)
+    for (let x = 0; x < S; x++) {
+      const dx = at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x - 1, y) - at(x - 1, y + 1);
+      const dy = at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x, y - 1) - at(x + 1, y - 1);
+      let nx = -dx * strength;
+      let ny = dy * strength;
+      let nz = 1;
+      const l = Math.hypot(nx, ny, nz);
+      nx /= l;
+      ny /= l;
+      nz /= l;
+      const i = (y * S + x) * 4;
+      img.data[i] = (nx * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (ny * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (nz * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  ctx.putImageData(img, 0, 0);
+  return toTexture(c, false);
 }
 
 // ------------------------------------------------------------ sprites & labels

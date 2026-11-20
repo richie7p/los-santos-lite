@@ -316,6 +316,30 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     transparent: true,
     opacity: 0.88,
   });
+  // depth-tinted water with shoreline foam (depth sampled from the terrain grid)
+  const waterUniforms = { tDepth: { value: depthTexture() }, uTime: { value: 0 }, uHalf: { value: WORLD_HALF } };
+  waterMat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, waterUniforms);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(position, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform sampler2D tDepth;\nuniform float uTime;\nuniform float uHalf;')
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        vec2 duv = (vWPos.xz + uHalf) / (2.0 * uHalf);
+        float depth = texture2D(tDepth, vec2(duv.x, duv.y)).r * 12.0;
+        if (duv.x < 0.0 || duv.y < 0.0 || duv.x > 1.0 || duv.y > 1.0) depth = 12.0;
+        vec3 shallow = vec3(0.07, 0.48, 0.54);
+        vec3 deep = vec3(0.02, 0.13, 0.22);
+        diffuseColor.rgb = mix(shallow, deep, smoothstep(0.0, 8.0, depth));
+        float wave = sin(uTime * 1.6 + (vWPos.x * 0.7 + vWPos.z * 0.5)) * 0.5 + 0.5;
+        float foam = (1.0 - smoothstep(0.02, 0.18 + wave * 0.2, depth)) * (0.45 + 0.55 * wave);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.95, 0.97), foam * 0.7);
+        diffuseColor.a = clamp(mix(0.72, 0.94, smoothstep(0.0, 3.0, depth)) + foam * 0.25, 0.0, 1.0);`,
+      );
+  };
   const water = new THREE.Mesh(new THREE.PlaneGeometry(14000, 14000), waterMat);
   water.rotation.x = -Math.PI / 2;
   water.position.y = SEA_LEVEL;
@@ -604,6 +628,8 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
       vertexColors: true,
       roughnessMap: f.orm,
       metalnessMap: f.orm,
+      normalMap: f.normal,
+      normalScale: new THREE.Vector2(1, -1),
       roughness: 1,
       metalness: isGlass ? 0.8 : 0.85,
       emissive: 0xffffff,
@@ -1291,6 +1317,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
   const update = (dt: number, time: number) => {
     for (const a of animated) a.obj.rotation[a.axis] += a.speed * dt;
     waterNormal.offset.set(time * 0.004, time * 0.0025);
+    waterUniforms.uTime.value = time;
     // signal light colour cycle (cosmetic)
     const ph = Math.floor(time / 6) % 3;
     signalLightMat.color.setHex(ph === 0 ? 0x33ff88 : ph === 1 ? 0xffcc33 : 0xff4433);
@@ -1313,6 +1340,26 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     }
   };
   return { root, water, nightMaterials, animated, lampPositions, emitters: details.emitters, update, setNight, setWet };
+}
+
+/** Water depth below sea level from the terrain grid, as an 8-bit texture (0..12 m). */
+function depthTexture() {
+  const H = heightGrid();
+  const S = GRID_SAMPLES;
+  const data = new Uint8Array(S * S * 4);
+  for (let j = 0; j < S; j++)
+    for (let i = 0; i < S; i++) {
+      const d = Math.max(0, Math.min(1, (SEA_LEVEL - H[j * S + i]) / 12));
+      const k = (j * S + i) * 4;
+      data[k] = data[k + 1] = data[k + 2] = Math.round(d * 255);
+      data[k + 3] = 255;
+    }
+  const t = new THREE.DataTexture(data, S, S, THREE.RGBAFormat);
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearFilter;
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  t.needsUpdate = true;
+  return t;
 }
 
 function pickRoof(r: () => number) {

@@ -23,6 +23,7 @@ export interface VehicleRig {
 }
 
 interface Cached {
+  plates: THREE.BufferGeometry;
   paint: THREE.BufferGeometry;
   cabin: THREE.BufferGeometry;
   trim: THREE.BufferGeometry;
@@ -48,11 +49,48 @@ const wheelGeo = (() => {
   };
   return mergeGeometries([
     colorize(new THREE.CylinderGeometry(1, 1, 1, 20).rotateZ(Math.PI / 2), 0x141414),
-    colorize(new THREE.CylinderGeometry(0.62, 0.62, 1.04, 10).rotateZ(Math.PI / 2), 0xc9ced3),
+    colorize(new THREE.CylinderGeometry(0.62, 0.62, 1.04, 10).rotateZ(Math.PI / 2), 0x8a9096),
+    // five spokes and a hub on each side
+    ...[-1, 1].flatMap((side) => [
+      colorize(new THREE.CylinderGeometry(0.16, 0.16, 0.08, 10).rotateZ(Math.PI / 2).translate(side * 0.53, 0, 0), 0xe2e6ea),
+      ...[0, 1, 2, 3, 4].map((k) =>
+        colorize(
+          new THREE.BoxGeometry(0.05, 0.1, 0.5)
+            .translate(0, 0, 0.3)
+            .rotateX((k / 5) * Math.PI * 2)
+            .translate(side * 0.53, 0, 0),
+          0xd6dbe0,
+        ),
+      ),
+    ]),
   ])!;
 })();
 const wheelMat = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.45, roughness: 0.45 });
 let taxiSign: THREE.MeshStandardMaterial | null = null;
+let plateMaterial: THREE.MeshStandardMaterial | null = null;
+/** Shared licence-plate material (one texture for every car). */
+function plateMat() {
+  if (plateMaterial) return plateMaterial;
+  if (typeof document === 'undefined') return (plateMaterial = new THREE.MeshStandardMaterial({ color: 0xf4f4ef }));
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 64;
+  const x = c.getContext('2d')!;
+  x.fillStyle = '#f4f4ef';
+  x.fillRect(0, 0, 256, 64);
+  x.strokeStyle = '#1b2a4a';
+  x.lineWidth = 5;
+  x.strokeRect(3, 3, 250, 58);
+  x.fillStyle = '#1b2a4a';
+  x.font = '900 40px "Rajdhani","Noto Sans TC",sans-serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.fillText('SOL·2026', 128, 34);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  plateMaterial = new THREE.MeshStandardMaterial({ map: t, roughness: 0.5 });
+  return plateMaterial;
+}
 const policeStripeMat = new THREE.MeshPhysicalMaterial({ color: 0x0b1a33, metalness: 0.5, roughness: 0.3, clearcoat: 1 });
 const checkerMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
 const goldMat = new THREE.MeshStandardMaterial({ color: 0xd4ac0d });
@@ -248,6 +286,20 @@ function buildCached(t: VehicleType): Cached {
     new THREE.BoxGeometry(0.22, 0.12, 0.1).translate(s.width / 2 + 0.06, s.hood + 0.12, hl - s.hoodLen - 0.15),
     new THREE.BoxGeometry(0.22, 0.12, 0.1).translate(-s.width / 2 - 0.06, s.hood + 0.12, hl - s.hoodLen - 0.15),
   ];
+  // door seams and handles on both sides
+  if (!s.boxy && t !== 'heli') {
+    const doorFront = hl - s.hoodLen - 0.1;
+    const doorMid = doorFront - Math.min(1.15, s.roofLen * 0.6);
+    const doorRear = doorMid - (s.roofLen > 1.3 ? 1.0 : 0);
+    const seamH = s.hood - s.wheelR * 0.8 - 0.05;
+    const seamY = s.wheelR * 0.8 + seamH / 2 + 0.02;
+    for (const side of [-1, 1]) {
+      const x = side * (s.width / 2 - 0.035);
+      for (const z of [doorFront, doorMid, doorRear]) trimParts.push(new THREE.BoxGeometry(0.02, seamH, 0.025).translate(x, seamY, z));
+      trimParts.push(new THREE.BoxGeometry(0.03, 0.04, 0.18).translate(side * (s.width / 2 - 0.02), s.hood - 0.16, doorMid + 0.18));
+      if (doorRear !== doorMid) trimParts.push(new THREE.BoxGeometry(0.03, 0.04, 0.18).translate(side * (s.width / 2 - 0.02), s.hood - 0.16, doorRear + 0.18));
+    }
+  }
   if (t === 'pickup') {
     // bed walls
     const bedLen = s.trunkLen - 0.1;
@@ -264,7 +316,12 @@ function buildCached(t: VehicleType): Cached {
   const lightY = s.hood - (s.boxy ? 0.2 : 0.22);
   const head = mergeGeometries([-1, 1].map((sx) => ni(new THREE.BoxGeometry(0.34, 0.12, 0.08).translate(sx * (s.width / 2 - 0.3), lightY, hl - 0.02))))!;
   const tail = mergeGeometries([-1, 1].map((sx) => ni(new THREE.BoxGeometry(0.36, 0.13, 0.06).translate(sx * (s.width / 2 - 0.28), lightY + 0.04, -hl + 0.02))))!;
-  const c = { paint, cabin, trim, head, tail };
+  const plateY = s.wheelR * 0.75 + 0.26;
+  const plates = mergeGeometries([
+    ni(new THREE.PlaneGeometry(0.52, 0.13).translate(0, plateY, hl + 0.075)),
+    ni(new THREE.PlaneGeometry(0.52, 0.13).rotateY(Math.PI).translate(0, plateY + 0.12, -hl - 0.075)),
+  ])!;
+  const c = { paint, cabin, trim, head, tail, plates };
   cache.set(t, c);
   return c;
 }
@@ -306,7 +363,7 @@ export function createVehicleRig(t: VehicleType, color: number): VehicleRig {
   const hl = s.length / 2;
   const head = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2d8, emissiveIntensity: 0.4 });
   const brake = new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff1a1a, emissiveIntensity: 0.4 });
-  body.add(new THREE.Mesh(geo.head, head), new THREE.Mesh(geo.tail, brake));
+  body.add(new THREE.Mesh(geo.head, head), new THREE.Mesh(geo.tail, brake), new THREE.Mesh(geo.plates, plateMat()));
 
   let sirenR: THREE.MeshStandardMaterial | undefined;
   let sirenB: THREE.MeshStandardMaterial | undefined;
