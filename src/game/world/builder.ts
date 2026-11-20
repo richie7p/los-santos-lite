@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GRID_RES, GRID_SAMPLES, GRID_STEP, gridAt, heightGrid } from './heightGrid';
+import { buildDetails, type Emitter } from './details';
 import { StaticWorld } from '../core/collision';
 import { rng, smoothstep } from '../core/math';
 import {
@@ -55,6 +56,7 @@ export interface WorldBuild {
   nightMaterials: { mat: THREE.MeshStandardMaterial; max: number }[];
   animated: AnimatedProp[];
   lampPositions: THREE.Vector3[];
+  emitters: Emitter[];
   update(dt: number, time: number): void;
   setNight(n: number): void;
   setWet(w: number): void;
@@ -709,6 +711,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
   }
   // countryside: forests, scattered trees and desert cacti
   const cactusMats: THREE.Matrix4[] = [];
+  const coniferMats: THREE.Matrix4[] = [];
   for (let k = 0; k < 9000; k++) {
     const x = (r() - 0.5) * (WORLD_HALF * 1.95);
     const z = (r() - 0.5) * (WORLD_HALF * 1.95);
@@ -731,7 +734,8 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     const dens = 0.12 + bio.forest * 0.75 + smoothstep(-500, -900, z) * 0.45 + (x < -380 ? 0.05 : 0);
     if (r() > dens) continue;
     const s = 0.9 + r() * 0.8 + bio.forest * 0.4;
-    treeMats.push(new THREE.Matrix4().compose(new THREE.Vector3(x, h - 0.2, z), quat(r() * 6.28), new THREE.Vector3(s, s * (0.9 + r() * 0.6), s)));
+    const conifer = z < -480 || bio.forest > 0.35 || h > 40;
+    (conifer ? coniferMats : treeMats).push(new THREE.Matrix4().compose(new THREE.Vector3(x, h - 0.2, z), quat(r() * 6.28), new THREE.Vector3(s, s * (0.9 + r() * 0.6), s)));
     col.addBox(x, z, 0.7, 0.7, h - 1, h + 6, 'wood');
   }
   // beach palms
@@ -757,6 +761,8 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
       }
     }
 
+  const details = buildDetails({ root, col, lampMats, lampPositions, nightMaterials, animated, asphalt: tex.asphalt });
+
   const lampMat = new THREE.MeshStandardMaterial({ color: 0x3b4046, roughness: 0.5, metalness: 0.7 });
   const lampHeadMat = new THREE.MeshStandardMaterial({ color: 0xfff3d6, emissive: 0xffd9a0, emissiveIntensity: 0 });
   nightMaterials.push({ mat: lampHeadMat, max: 2.6 });
@@ -766,6 +772,8 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x4f7d3a, roughness: 0.85, flatShading: true });
   addInstanced(root, new THREE.CylinderGeometry(0.16, 0.26, 3.2, 6).translate(0, 1.6, 0), trunkMat, treeMats, true);
   addInstanced(root, treeCanopyGeometry(), leafMat, treeMats, true);
+  addInstanced(root, new THREE.CylinderGeometry(0.18, 0.3, 2.4, 6).translate(0, 1.2, 0), trunkMat, coniferMats, true);
+  addInstanced(root, coniferGeometry(), new THREE.MeshStandardMaterial({ color: 0x2f5a34, roughness: 0.9, flatShading: true }), coniferMats, true);
   addInstanced(root, palmTrunkGeometry(), new THREE.MeshStandardMaterial({ color: 0x8a6d4f, roughness: 0.9 }), palmMats, true);
   addInstanced(root, cactusGeometry(), new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.85, flatShading: true }), cactusMats, true);
   addInstanced(root, palmLeavesGeometry(), new THREE.MeshStandardMaterial({ color: 0x5b8f3c, roughness: 0.8, side: THREE.DoubleSide, flatShading: true }), palmMats, true);
@@ -1304,7 +1312,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
       m.mat.color.copy(m.dryC).multiplyScalar(1 + (m.dark - 1) * w);
     }
   };
-  return { root, water, nightMaterials, animated, lampPositions, update, setNight, setWet };
+  return { root, water, nightMaterials, animated, lampPositions, emitters: details.emitters, update, setNight, setWet };
 }
 
 function pickRoof(r: () => number) {
@@ -1421,6 +1429,14 @@ function helipadMesh(root: THREE.Group, x: number, z: number, y: number) {
   m.position.set(x, y + 0.03, z);
   m.receiveShadow = true;
   root.add(m);
+}
+
+function coniferGeometry() {
+  return mergeGeometries([
+    new THREE.ConeGeometry(2.4, 3.6, 8).translate(0, 3.4, 0),
+    new THREE.ConeGeometry(1.9, 3.2, 8).translate(0, 5.2, 0),
+    new THREE.ConeGeometry(1.3, 2.8, 8).translate(0, 6.9, 0),
+  ])!;
 }
 
 function cactusGeometry() {

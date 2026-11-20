@@ -461,6 +461,9 @@ const PALETTE = {
 
 export const BUILDINGS: BuildingDef[] = [];
 
+/** Hillside villas (rendered with a pool and terrace by the detail pass). */
+export const VILLAS: { x: number; z: number; w: number; d: number }[] = [];
+
 export const GAS_STATIONS = [
   { x: -1200, z: -60, yaw: Math.PI, name: '快加油 · 塵水站' },
   { x: 1000, z: -690, yaw: -Math.PI / 2, name: '快加油 · 北線站' },
@@ -659,12 +662,26 @@ export const PLAZAS: ParkDef[] = [];
   ])
     place({ cx: x, cz: z, w: 10, d: 8, h: 5, style: 'house' });
 
+  // ---- hillside villas along the observatory road
+  for (const [x, z, w, d] of [
+    [95, -470, 22, 16],
+    [-15, -525, 20, 15],
+    [85, -545, 18, 16],
+    [-95, -590, 22, 16],
+    [-55, -650, 20, 14],
+    [60, -600, 18, 14],
+  ] as [number, number, number, number][]) {
+    if (!clearOfRoads(x, z, w + 12, d + 12)) continue;
+    addB(r, { cx: x, cz: z, w, d, h: 7, style: 'civic', tint: 0xf4f1ea });
+    VILLAS.push({ x, z, w, d });
+  }
+
   // ---- North Ridge relay station
   addB(r, { cx: -300, cz: -1160, w: 14, d: 10, h: 6, style: 'civic', name: '北嶺轉播站' });
 })();
 
 /** Z of the ring highway through Dustwater for a given X. */
-function townRoadZ(x: number) {
+export function townRoadZ(x: number) {
   if (x < -1250) return -150 + ((x + 1400) / 150) * 50;
   return -100 + ((x + 1250) / 150) * -10;
 }

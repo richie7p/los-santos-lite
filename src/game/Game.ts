@@ -792,6 +792,16 @@ export class Game {
     this.wetness += (rain - this.wetness) * Math.min(1, dt * (rain > this.wetness ? 0.12 : 0.02));
     this.world3d.setWet(this.wetness);
     for (const v of this.vehicles) v.gripMul = 1 - this.wetness * 0.18;
+    // ambient emitters (smokestacks, campfires) near the camera
+    for (const e of this.world3d.emitters) {
+      const d = Math.abs(e.x - this.camera.position.x) + Math.abs(e.z - this.camera.position.z);
+      if (d > 420) continue;
+      if (e.kind === 'smoke' && Math.random() < dt * 5) this.fx.smokePuff(e.x, e.y, e.z, 0.25, 2.2);
+      else if (e.kind === 'fire') {
+        if (Math.random() < dt * 25) this.fx.fire(e.x, e.y, e.z, 0.7);
+        if (Math.random() < dt * 3) this.fx.smokePuff(e.x, e.y + 1.2, e.z, 0.5, 0.6);
+      }
+    }
     this.fx.update(dt);
     this.updateHeadlight();
     this.updateCamera(rawDt);
