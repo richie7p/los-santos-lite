@@ -1115,8 +1115,199 @@ function buildStory(g: Game, m: Missions): MissionDef[] {
           loseHeatStep(g, m),
           gotoStep(g, m, '開到【雲杉天文台】和老韓會合', 30, -640, 6),
           waitStep(6, '……', () => {
-            g.setSubtitle('老韓：「你做到了，小子。索拉港從今天起，是你的了。」', 6);
+            g.setSubtitle('老韓：「你做到了，小子……不過紫蛇幫真正的老大『白蟒』還在外頭。休息一下，再來找我。」', 6);
           }),
+        ];
+      },
+    },
+    {
+      id: 'm7',
+      title: '第七章 · 沙漠交易',
+      brief: '白蟒的人在塵水沙漠的紅岩台地交易軍火。去攪局，把貨搶過來。',
+      reward: 15000,
+      start: () => ({ x: gar.x - 2, z: gar.z + 4 }),
+      steps: (run) => {
+        let crate: ReturnType<Missions['addPickup']> | null = null;
+        let foes: Actor[] = [];
+        return [
+          waitStep(3, '聽老韓交代', () => g.setSubtitle('老韓：「沿著環島公路往西，過了塵水鎮就是紅岩台地。他們人多，帶點重火力。」', 3)),
+          gotoStep(g, m, '前往【塵水沙漠 · 紅岩台地】', -1060, -430, 12),
+          {
+            obj: '擊潰交易現場的紫蛇幫',
+            enter: () => {
+              const van = g.spawnVehicle('van', -1048, -442, 0.6, 0x1c2128);
+              van.tag = 'mission';
+              run.vehicles.push(van);
+              const pick = g.spawnVehicle('pickup', -1072, -418, 2.2, 0x7b241c);
+              pick.tag = 'mission';
+              run.vehicles.push(pick);
+              foes = spawnEnemies(
+                g,
+                run,
+                [
+                  [-1040, -450],
+                  [-1055, -455],
+                  [-1035, -425],
+                  [-1078, -430],
+                  [-1066, -404],
+                  [-1050, -400],
+                  [-1085, -448],
+                ],
+                ['rifle', 'smg', 'shotgun', 'smg'],
+                'enemy',
+                0.34,
+              );
+              g.setSubtitle('紫蛇幫：「是條子嗎？不管了，開火！」', 3);
+            },
+            update: () => {
+              const alive = foes.filter((a) => !a.dead).length;
+              g.hudObjective(`擊潰交易現場的紫蛇幫（剩餘 ${alive}）`);
+              if (alive === 0) return 'next';
+            },
+          },
+          {
+            obj: '搶走軍火箱',
+            enter: () => {
+              crate = m.addPickup('mcrate', 'weapon', -1052, -432, 6, 'rpg', 0, true);
+              m.marker.set(-1052, -432, 1.5);
+            },
+            update: () => (crate && !m.pickups.includes(crate) ? 'next' : undefined),
+          },
+          gotoStep(g, m, '把軍火送到【塵水鎮】老韓的朋友手上', -1250, -100, 12),
+          waitStep(4, '……', () => g.setSubtitle('老韓（電話）：「幹得好。白蟒急了，他打算從機場坐直升機溜走。」', 4)),
+        ];
+      },
+    },
+    {
+      id: 'm8',
+      title: '第八章 · 機場劫機',
+      brief: '白蟒準備搭直升機逃出索拉港。先一步搶走他的直升機。',
+      reward: 20000,
+      start: () => ({ x: gar.x - 2, z: gar.z + 4 }),
+      steps: (run) => {
+        let heli: Vehicle | null = null;
+        let guards: Actor[] = [];
+        return [
+          waitStep(3, '聽老韓交代', () => g.setSubtitle('老韓：「直升機停在國際機場的東側停機坪，有人看守。搶到手就飛去鏡湖，我在山莊等你。」', 4)),
+          gotoStep(g, m, '前往【索拉國際機場 · 東側停機坪】', -700, 800, 14),
+          {
+            obj: '解決看守，搶下直升機',
+            enter: () => {
+              heli = g.spawnVehicle('heli', -690, 815, -Math.PI / 2, 0x111111);
+              heli.tag = 'mission';
+              heli.blip = 'target';
+              run.vehicles.push(heli);
+              guards = spawnEnemies(
+                g,
+                run,
+                [
+                  [-680, 800],
+                  [-700, 830],
+                  [-675, 828],
+                  [-712, 806],
+                  [-665, 812],
+                ],
+                ['rifle', 'smg'],
+                'enemy',
+                0.33,
+              );
+              m.marker.set(-690, 815, 4);
+            },
+            update: () => {
+              if (!heli || heli.destroyed) return { fail: '直升機被毀了' };
+              const alive = guards.filter((a) => !a.dead).length;
+              g.hudObjective(alive ? `解決看守（剩餘 ${alive}），搶下直升機` : '坐上直升機（按 F）');
+              if (g.player.vehicle === heli) {
+                g.police.addHeat(3, '機場保全報警');
+                return 'next';
+              }
+            },
+          },
+          {
+            obj: '飛到【鏡湖山莊】並降落',
+            enter: () => m.marker.set(560, -1000, 14),
+            update: () => {
+              if (!heli || heli.destroyed) return { fail: '直升機墜毀了' };
+              if (g.player.vehicle !== heli) {
+                g.hudObjective('回到直升機上');
+                return;
+              }
+              const d = Math.hypot(heli.x - 560, heli.z + 1000);
+              g.hudObjective(d < 40 ? '降落在山莊旁（按 Shift 下降）' : '飛到【鏡湖山莊】並降落');
+              if (d < 30 && !heli.airborne && heli.speed < 3) return 'next';
+            },
+          },
+          loseHeatStep(g, m),
+          waitStep(4, '……', () => g.setSubtitle('老韓：「沒了直升機，白蟒只能開車沿北嶺公路逃。這次別讓他跑了。」', 4)),
+        ];
+      },
+    },
+    {
+      id: 'm9',
+      title: '最終章 · 北嶺追擊',
+      brief: '白蟒開著跑車沿北嶺公路逃亡。攔下他，結束這一切。',
+      reward: 30000,
+      start: () => ({ x: gar.x - 2, z: gar.z + 4 }),
+      steps: (run) => {
+        let target: Vehicle | null = null;
+        let boss: Actor | null = null;
+        let loot: ReturnType<Missions['addPickup']> | null = null;
+        return [
+          waitStep(3, '聽老韓交代', () => g.setSubtitle('老韓：「他從北邊的環島公路跑。開台快車，或者……那架直升機也不錯。」', 4)),
+          gotoStep(g, m, '前往【北嶺 · 環島公路】', -750, -1450, 16),
+          {
+            obj: '追上並破壞白蟒的跑車',
+            enter: () => {
+              // spawn around the player: the camera focus may still be at the previous position this frame
+              target = g.spawnTrafficVehicle('sports', 70, 170, g.player.x, g.player.z) ?? g.spawnVehicle('sports', -620, -1500, Math.PI / 2, 0xf4f6f7);
+              target.repaint(0xf4f6f7);
+              target.tag = 'mission';
+              target.blip = 'target';
+              target.damageScale = 0.65;
+              target.crew = 'enemy';
+              target.crewCount = 1;
+              if (target.ai.kind !== 'traffic') target.ai.kind = 'traffic';
+              target.ai.pers = 1.35;
+              target.ai.cruise = 30;
+              run.vehicles.push(target);
+              g.setSubtitle('白蟒（無線電）：「想追我？你們這些鄉下人追不上的！」', 3);
+            },
+            update: () => {
+              const t = target!;
+              t.ai.cruise = Math.max(t.ai.cruise, 28);
+              if (t.hp < t.spec.hp * 0.3 || t.destroyed) {
+                t.ai.kind = 'parked';
+                t.crewCount = 0;
+                const ep = t.exitPoint(1);
+                boss = g.spawnActor('enemy', { skin: 0xf1c27d, shirt: 0xf4f6f7, pants: 0xf4f6f7, shoes: 0x111111, hair: 0xeeeeee, hairStyle: 'short', jacket: 0xf4f6f7, glasses: true, chain: true, watch: true, build: 1.1 }, ep.x, ep.z);
+                boss.setWeapon('rifle');
+                boss.ai.aggro = true;
+                boss.ai.accuracy = 0.4;
+                boss.hp = boss.maxHp = 380;
+                boss.armor = 100;
+                boss.tag = 'mission';
+                boss.blip = 'target';
+                run.actors.push(boss);
+                g.setSubtitle('白蟒：「好啊，那就在這裡做個了斷！」', 3);
+                return 'next';
+              }
+              if (run.stepT > 2 && Math.hypot(t.x - g.player.x, t.z - g.player.z) > 450) return { fail: '白蟒逃走了' };
+            },
+          },
+          {
+            obj: '擊倒白蟒',
+            update: () => (boss && boss.dead ? 'next' : undefined),
+          },
+          {
+            obj: '拿走白蟒的帳本',
+            enter: () => {
+              const b = boss!;
+              loot = m.addPickup('mledger', 'cash', b.x + 1, b.z + 1, 10000, undefined, 0, true);
+              m.marker.set(loot.x, loot.z, 1.5);
+            },
+            update: () => (loot && !m.pickups.includes(loot) ? 'next' : undefined),
+          },
+          waitStep(6, '……', () => g.setSubtitle('老韓（電話）：「紫蛇幫完了。索拉港——現在真的是你的了，小子。」', 6)),
         ];
       },
     },

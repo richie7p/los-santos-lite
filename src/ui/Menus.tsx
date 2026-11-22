@@ -379,10 +379,12 @@ export function ShopPanel({ game }: { game: Game }) {
 
 export function DeathScreen() {
   const reason = useHud((s) => s.deathReason);
+  const title = useHud((s) => s.deathTitle);
+  const busted = title === '被捕';
   return (
     <div className="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none">
-      <div className="big-in font-display text-[clamp(48px,9vw,110px)] font-black tracking-wider text-red-500 [text-shadow:0_6px_30px_rgba(0,0,0,0.9)]">重傷倒地</div>
-      <div className="mt-2 rounded bg-black/60 px-4 py-1 text-white/85">{reason} · 正在送往聖光綜合醫院…</div>
+      <div className={`big-in font-display text-[clamp(48px,9vw,110px)] font-black tracking-wider ${busted ? 'text-sky-400' : 'text-red-500'} [text-shadow:0_6px_30px_rgba(0,0,0,0.9)]`}>{title}</div>
+      <div className="mt-2 rounded bg-black/60 px-4 py-1 text-white/85">{reason} · {busted ? '正在押送到警察局…' : '正在送往最近的醫院…'}</div>
     </div>
   );
 }

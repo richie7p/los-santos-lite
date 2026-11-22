@@ -43,7 +43,7 @@ export const WEAPONS: Record<WeaponId, WeaponSpec> = {
 
 export const WEAPON_ORDER: WeaponId[] = ['fist', 'pistol', 'smg', 'shotgun', 'rifle', 'sniper', 'rpg', 'grenade'];
 
-export type VehicleType = 'compact' | 'sedan' | 'sports' | 'muscle' | 'suv' | 'van' | 'pickup' | 'taxi' | 'police' | 'armored' | 'heli';
+export type VehicleType = 'compact' | 'sedan' | 'sports' | 'muscle' | 'suv' | 'van' | 'pickup' | 'taxi' | 'police' | 'armored' | 'heli' | 'bike';
 
 export interface VehicleSpec {
   type: VehicleType;
@@ -69,6 +69,8 @@ export interface VehicleSpec {
   price?: number;
   /** Helicopter: uses flight physics instead of wheels. */
   flying?: boolean;
+  /** Two-wheeler: leans into turns, rider sits on top. */
+  bike?: boolean;
 }
 
 export const VEHICLES: Record<VehicleType, VehicleSpec> = {
@@ -81,10 +83,11 @@ export const VEHICLES: Record<VehicleType, VehicleSpec> = {
   pickup: { type: 'pickup', name: '牧馬人皮卡', length: 5.3, width: 2.02, height: 1.85, hood: 1.15, hoodLen: 1.3, trunkLen: 1.9, roofLen: 1.4, wheelR: 0.42, wheelbase: 3.25, maxSpeed: 42, accel: 10, brake: 22, grip: 7, steer: 0.52, hp: 1300, mass: 2200, colors: [0x7b241c, 0x1b2631, 0xf0f3f4, 0x196f3d, 0x9c640c] },
   taxi: { type: 'taxi', name: '索拉計程車', length: 4.7, width: 1.86, height: 1.46, hood: 0.92, hoodLen: 1.15, trunkLen: 0.85, roofLen: 1.55, wheelR: 0.33, wheelbase: 2.8, maxSpeed: 44, accel: 10, brake: 24, grip: 7.6, steer: 0.58, hp: 900, mass: 1400, colors: [0xf7c600] },
   police: { type: 'police', name: '巡邏警車', length: 4.9, width: 1.92, height: 1.5, hood: 0.94, hoodLen: 1.3, trunkLen: 0.9, roofLen: 1.55, wheelR: 0.34, wheelbase: 2.9, maxSpeed: 56, accel: 14, brake: 28, grip: 8.4, steer: 0.58, hp: 1300, mass: 1700, colors: [0xf4f6f7] },
+  bike: { type: 'bike', name: '雷鳥 R6 機車', length: 2.15, width: 0.82, height: 1.15, hood: 0.85, hoodLen: 0, trunkLen: 0, roofLen: 0, wheelR: 0.32, wheelbase: 1.42, maxSpeed: 62, accel: 17, brake: 26, grip: 8.2, steer: 0.75, hp: 420, mass: 260, colors: [0xd62828, 0x111111, 0xf4f6f7, 0xf59e0b, 0x1d4ed8, 0x16a34a], bike: true },
   heli: { type: 'heli', name: '蜂鳥直升機', length: 11.5, width: 2.6, height: 3.1, hood: 1.4, hoodLen: 0, trunkLen: 0, roofLen: 0, wheelR: 0.3, wheelbase: 3, maxSpeed: 52, accel: 9, brake: 0, grip: 0, steer: 1.35, hp: 1500, mass: 2400, colors: [0xf4f6f7, 0x1d4ed8, 0xd62828, 0x111111, 0xf59e0b], flying: true },
   armored: { type: 'armored', name: '運鈔裝甲車', length: 6.2, width: 2.35, height: 2.7, hood: 1.3, hoodLen: 1.0, trunkLen: 0, roofLen: 4.4, wheelR: 0.48, wheelbase: 3.6, maxSpeed: 30, accel: 6, brake: 16, grip: 6.5, steer: 0.48, hp: 4200, mass: 5000, colors: [0x5d6d5b], boxy: true },
 };
 
-export const CIVILIAN_TYPES: VehicleType[] = ['compact', 'compact', 'sedan', 'sedan', 'sedan', 'suv', 'suv', 'van', 'pickup', 'taxi', 'sports', 'muscle'];
+export const CIVILIAN_TYPES: VehicleType[] = ['compact', 'compact', 'sedan', 'sedan', 'sedan', 'suv', 'suv', 'van', 'pickup', 'taxi', 'sports', 'muscle', 'bike', 'bike'];
 
 export const kmh = (ms: number) => Math.round(Math.abs(ms) * 3.6);

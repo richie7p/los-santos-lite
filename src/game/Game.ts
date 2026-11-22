@@ -134,6 +134,9 @@ export class Game {
   private districtT = 0;
   private resizeObs: ResizeObserver | null = null;
   private skipRender = false;
+  private lastShotT = -1e9;
+  private respawnAt: 'hospital' | 'police' = 'hospital';
+  private autosaveT = 120;
   private wetness = 0;
 
   vehicleEvents: VehicleEvents;
@@ -150,8 +153,9 @@ export class Game {
     this.renderer.domElement.style.display = 'block';
     this.camera = new THREE.PerspectiveCamera(s.fov, 1, 0.1, 4000);
     this.input = new Input(this.renderer.domElement);
-    this.input.onLockChange = (locked) => {
-      if (!locked && this.phase === 'playing') this.setPhase('paused');
+    this.input.onLockChange = (locked, selfReleased) => {
+      // an unlock we asked for (shop/menu) can arrive after the game already resumed: don't pause for it
+      if (!locked && !selfReleased && this.phase === 'playing') this.setPhase('paused');
     };
     this.headlight = new THREE.SpotLight(0xfff1d6, 0, 70, 0.55, 0.45, 1.2);
     this.scene.add(this.headlight, this.headlight.target);
@@ -164,6 +168,19 @@ export class Game {
           this.audio.crash(sp * clamp(1 - d / 80, 0, 1));
         }
         if (v.isPlayer) this.shake(Math.min(0.8, sp / 25));
+        // hard crash on a motorbike throws the rider off
+        if (v.isPlayer && v.spec.bike && sp > 11 && this.player.vehicle === v) {
+          const dx = v.vx;
+          const dz = v.vz;
+          this.exitVehicle(true);
+          const p = this.player;
+          p.vx = dx * 0.6;
+          p.vz = dz * 0.6;
+          p.vy = 5;
+          p.onGround = false;
+          this.combat.damageActor(p, Math.min(60, sp * 2.5), null, null, false, 'fall');
+          this.toast('摔車了！', 'bad');
+        }
       },
       onLand: (v, air, impact) => {
         if (v.isPlayer) {
@@ -323,7 +340,8 @@ export class Game {
 
   setPhase(p: HudState['phase']) {
     this.phase = p;
-    const lockNeeded = p === 'playing';
+    // keep the mouse captured through death/arrest so respawning needs no extra click
+    const lockNeeded = p === 'playing' || p === 'dead';
     this.input.enabled = p === 'playing' || p === 'dead';
     if (!lockNeeded) this.input.releaseLock();
     if (p !== 'playing') {
@@ -446,8 +464,9 @@ export class Game {
   }
 
   /** Spawn a driving AI vehicle on a lane at a given distance band from the player. */
-  spawnTrafficVehicle(type: VehicleType, minD: number, maxD: number) {
-    return this.traffic.spawnOnLane(type, minD, maxD);
+  /** Spawn an AI car on a lane in a distance band around (cx, cz) – the camera focus by default. */
+  spawnTrafficVehicle(type: VehicleType, minD: number, maxD: number, cx?: number, cz?: number) {
+    return this.traffic.spawnOnLane(type, minD, maxD, cx, cz);
   }
 
   // ================================================================ inventory
@@ -645,21 +664,43 @@ export class Game {
     if (v.ai.kind === 'police' && blame === this.player) this.police.addHeat(Math.max(2, this.police.heat), '炸毀警車');
   }
 
+  /** Is the player visibly armed and dangerous (stops the police from trying to arrest)? */
+  playerThreat() {
+    const p = this.player;
+    if (p.weapon !== 'fist' && (this.aiming || performance.now() - this.lastShotT < 6000)) return true;
+    return false;
+  }
+
+  /** Arrested by the police at low heat. */
+  onBusted() {
+    if (this.phase === 'dead') return;
+    this.respawnAt = 'police';
+    this.deadT = 0;
+    this.focusActive = false;
+    this.player.pose = 'handsUp';
+    this.setPhase('dead');
+    this.hud({ deathReason: '被警方逮捕', deathTitle: '被捕' });
+    this.audio.jingle('fail');
+    if (this.missions.run) this.missions.fail('你被捕了');
+  }
+
   private onPlayerDeath(reason: string) {
     if (this.phase === 'dead') return;
     this.stats.deaths++;
     this.deadT = 0;
     this.focusActive = false;
     if (this.player.vehicle) this.exitVehicle(true);
+    this.respawnAt = 'hospital';
     this.setPhase('dead');
-    this.hud({ deathReason: reason });
+    this.hud({ deathReason: reason, deathTitle: '重傷倒地' });
     this.audio.jingle('fail');
     if (this.missions.run) this.missions.fail('你倒下了');
   }
 
   private respawn() {
-    // nearest hospital to where we fell
-    const hs = POIS.filter((o) => o.kind === 'hospital');
+    // nearest hospital (or police station after an arrest)
+    const busted = this.respawnAt === 'police';
+    const hs = POIS.filter((o) => o.kind === (busted ? 'police' : 'hospital'));
     const h = hs.reduce((a, b) => (Math.hypot(b.x - this.player.x, b.z - this.player.z) < Math.hypot(a.x - this.player.x, a.z - this.player.z) ? b : a));
     const p = this.player;
     p.dead = false;
@@ -669,8 +710,14 @@ export class Game {
     p.setPos(h.x, h.z);
     p.yaw = 0;
     this.camYaw = 0;
-    const fee = Math.min(2000, Math.round(this.cash * 0.1));
-    if (fee > 0) this.addCash(-fee, '醫療費');
+    const fee = busted ? Math.min(3000, Math.round(this.cash * 0.15)) : Math.min(2000, Math.round(this.cash * 0.1));
+    if (fee > 0) this.addCash(-fee, busted ? '罰款與保釋金' : '醫療費');
+    if (busted) {
+      // the police confiscate half of your ammunition
+      for (const w of WEAPON_ORDER) this.inv[w].reserve = Math.floor(this.inv[w].reserve / 2);
+      this.toast('警方沒收了一半的彈藥', 'bad');
+    }
+    p.pose = 'idle';
     this.police.clear(true);
     // clear hostile mission leftovers near the player
     for (const a of [...this.actors]) if (a.team === 'police' || (a.team === 'enemy' && !a.tag)) this.removeActor(a);
@@ -794,6 +841,10 @@ export class Game {
       this.fpsN = 0;
     }
     try {
+      this.input.vehicleMode = !!this.player?.vehicle;
+      this.input.pollGamepad();
+      // Menu button resumes from the pause screen
+      if (this.phase === 'paused' && this.input.gamepadActive && this.input.rawPressed('Escape')) this.resume();
       // measure with the wall clock: the frame delta above is capped for the simulation
       const wall = performance.now();
       const realDt = (wall - this.lastWall) / 1000;
@@ -842,6 +893,10 @@ export class Game {
     if (ph === 'playing') this.handleInput(rawDt, dt);
     if (ph === 'dead') {
       this.deadT += rawDt;
+      if (this.respawnAt === 'police') {
+        this.player.pose = 'handsUp';
+        this.player.move(dt, this.world, 0, 0, 20, false);
+      }
       this.player.animate(dt);
       if (this.deadT > 4.5) this.respawn();
     }
@@ -858,6 +913,15 @@ export class Game {
     this.police.update(dt);
     this.combat.update(dt);
     this.missions.update(dt);
+    // periodic autosave while free-roaming
+    this.autosaveT -= rawDt;
+    if (this.autosaveT <= 0) {
+      this.autosaveT = 120;
+      if (ph === 'playing' && !this.missions.run && this.police.heat === 0 && !this.player.dead) {
+        this.save();
+        this.toast('已自動存檔', 'info');
+      }
+    }
     if (this.witnessT > 0) {
       this.witnessT -= dt;
       if (this.witnessT <= 0 && Math.random() < 0.6) this.police.addHeat(1, '目擊者報警');
@@ -1019,7 +1083,7 @@ export class Game {
     const p = this.player;
     const inp = this.input;
     const playing = this.phase === 'playing';
-    if (p.dead) return;
+    if (p.dead || this.phase === 'dead') return;
     // regen to 50%
     this.regenT -= dt;
     if (this.regenT <= 0 && p.hp < 50) p.hp = Math.min(50, p.hp + dt * 4);
@@ -1119,6 +1183,7 @@ export class Game {
     }
     this.fireCd = 1 / spec.rate;
     this.hipFireT = 0.6;
+    this.lastShotT = performance.now();
     if (!(this.focusActive && false)) slot.mag--;
     p.rig.kick();
     // aim ray from camera

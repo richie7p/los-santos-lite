@@ -55,7 +55,7 @@ export default function App() {
       {game && phase === 'map' && <MapScreen game={game} />}
       {game && phase === 'shop' && <ShopPanel game={game} />}
       {game && phase === 'dead' && <DeathScreen />}
-      {game && phase === 'playing' && !game.input.touch && <ClickCatcher game={game} />}
+      {game && phase === 'playing' && !game.input.touch && !game.input.gamepadActive && <ClickCatcher game={game} />}
       {game && phase === 'playing' && game.input.touch && <TouchControls game={game} />}
       {game && game.input.touch && <RotateHint />}
       {(!game || phase === 'loading') && !error && <LoadingScreen />}

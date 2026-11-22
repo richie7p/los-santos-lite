@@ -17,7 +17,9 @@ export class Input {
   /** Analog stick from the touch joystick (-1..1). */
   vMoveX = 0;
   vMoveY = 0;
-  onLockChange?: (locked: boolean) => void;
+  /** selfReleased: the game released the lock itself (menu/shop), not the user pressing Esc. */
+  onLockChange?: (locked: boolean, selfReleased: boolean) => void;
+  private releasing = false;
 
   constructor(private el: HTMLElement) {
     this.touch = isTouchDevice();
@@ -58,7 +60,10 @@ export class Input {
   }
 
   releaseLock() {
-    if (document.pointerLockElement === this.el) document.exitPointerLock();
+    if (document.pointerLockElement === this.el) {
+      this.releasing = true;
+      document.exitPointerLock();
+    }
   }
 
   isDown(code: string) {
@@ -66,6 +71,10 @@ export class Input {
   }
   wasPressed(code: string) {
     return this.enabled && this.pressed.has(code);
+  }
+  /** Pressed this frame, even while game input is disabled (menus). */
+  rawPressed(code: string) {
+    return this.pressed.has(code);
   }
   wasReleased(code: string) {
     return this.released.has(code);
@@ -92,6 +101,80 @@ export class Input {
   }
   setAim(on: boolean) {
     this.rmb = on;
+  }
+
+  // ------------------------------------------------------------ gamepad
+  /** True once a gamepad has been used (hides mouse-lock prompts). */
+  gamepadActive = false;
+  /** Set by the game each frame: triggers drive the car instead of shooting. */
+  vehicleMode = false;
+  private padPrev: boolean[] = [];
+  private padKeys = new Set<string>();
+
+  /**
+   * Standard-mapping gamepad (Xbox / PlayStation layout):
+   * L-stick move/steer, R-stick look, RT fire (accelerate in cars), LT aim (brake/reverse in cars),
+   * A jump/handbrake, B interact, X reload, Y enter/exit, LB/RB weapons, D-pad up focus / down radio,
+   * L3 sprint, R3 camera, View map, Menu pause.
+   */
+  pollGamepad() {
+    const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
+    const gp = Array.from(pads).find((p) => p && p.connected && p.mapping === 'standard');
+    if (!gp) return;
+    const dz = (v: number) => (Math.abs(v) < 0.15 ? 0 : (v - Math.sign(v) * 0.15) / 0.85);
+    const lx = dz(gp.axes[0] ?? 0);
+    const ly = dz(gp.axes[1] ?? 0);
+    const rx = dz(gp.axes[2] ?? 0);
+    const ry = dz(gp.axes[3] ?? 0);
+    const btn = (i: number) => !!gp.buttons[i]?.pressed;
+    const val = (i: number) => gp.buttons[i]?.value ?? 0;
+    const any = Math.abs(lx) + Math.abs(ly) + Math.abs(rx) + Math.abs(ry) > 0 || gp.buttons.some((b) => b.pressed);
+    if (any) this.gamepadActive = true;
+    if (!this.gamepadActive) return;
+    // sticks
+    this.vMoveX = lx;
+    this.vMoveY = -ly;
+    if (rx || ry) this.addLook(rx * Math.abs(rx) * 14, ry * Math.abs(ry) * 10);
+    // triggers
+    const rt = val(7);
+    const lt = val(6);
+    if (this.vehicleMode) {
+      this.vMoveY = Math.max(-1, Math.min(1, rt - lt - ly * (rt || lt ? 0 : 1)));
+      this.setFire(false);
+      this.setAim(false);
+    } else {
+      this.setFire(rt > 0.4);
+      this.setAim(lt > 0.4);
+    }
+    // buttons -> keys (edge-triggered so pressed/released work)
+    const map: [number, string][] = [
+      [0, 'Space'],
+      [1, 'KeyE'],
+      [2, 'KeyR'],
+      [3, 'KeyF'],
+      [10, 'ShiftLeft'],
+      [11, 'KeyV'],
+      [8, 'KeyM'],
+      [9, 'Escape'],
+      [12, 'KeyQ'],
+      [13, 'KeyB'],
+      [14, 'KeyH'],
+    ];
+    for (const [i, code] of map) {
+      const now = btn(i);
+      if (now !== !!this.padPrev[i]) this.debugSet(code, now);
+      this.padPrev[i] = now;
+    }
+    // shoulder buttons cycle weapons
+    for (const [i, dir] of [
+      [4, -1],
+      [5, 1],
+    ] as [number, number][]) {
+      const now = btn(i);
+      if (now && !this.padPrev[i]) this.wheel += dir;
+      this.padPrev[i] = now;
+    }
+    void this.padKeys;
   }
 
   /** Simulate a key from an on-screen button. */
@@ -153,7 +236,9 @@ export class Input {
       this.lmb = false;
       this.rmb = false;
     }
-    this.onLockChange?.(this.locked);
+    const self = !this.locked && this.releasing;
+    if (!this.locked) this.releasing = false;
+    this.onLockChange?.(this.locked, self);
   };
 
   /** Simulate keys for automated tests. */

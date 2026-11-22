@@ -285,7 +285,9 @@ export class Vehicle {
     const accel = (vF - this.lastVF) / Math.max(dt, 1e-3);
     this.lastVF = vF;
     this.visPitch = lerp(this.visPitch, clamp(-accel * 0.004, -0.06, 0.06), damp(6, dt));
-    this.visRoll = lerp(this.visRoll, clamp(this.yawRate * vF * 0.0035, -0.08, 0.08), damp(6, dt));
+    this.visRoll = s.bike
+      ? lerp(this.visRoll, clamp(-this.yawRate * vF * 0.045, -0.75, 0.75), damp(7, dt)) // lean into the turn
+      : lerp(this.visRoll, clamp(this.yawRate * vF * 0.0035, -0.08, 0.08), damp(6, dt));
 
     // skids & tyre smoke
     const slipping = !this.airborne && ((Math.abs(vR) > 4 && this.speed > 6) || (hand && Math.abs(vF) > 6));

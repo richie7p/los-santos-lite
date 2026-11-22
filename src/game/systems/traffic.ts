@@ -127,12 +127,12 @@ export class Traffic {
   }
 
   /** Spawn an AI-driven car on a random lane within a distance band from the focus. */
-  spawnOnLane(type: VehicleType, minD: number, maxD: number): Vehicle | null {
+  spawnOnLane(type: VehicleType, minD: number, maxD: number, cx = this.g.focus.x, cz = this.g.focus.z): Vehicle | null {
     const g = this.g;
     const cam = g.camera;
-    for (let attempt = 0; attempt < 12; attempt++) {
-      const near = ROAD_NODES.filter((n) => Math.abs(n.x - g.focus.x) < maxD + 170 && Math.abs(n.z - g.focus.z) < maxD + 170);
-      if (!near.length) return null;
+    const near = ROAD_NODES.filter((n) => Math.abs(n.x - cx) < maxD + 170 && Math.abs(n.z - cz) < maxD + 170);
+    if (!near.length) return null;
+    for (let attempt = 0; attempt < 40; attempt++) {
       const a = pick(near);
       const b = ROAD_NODES[pick(a.links)];
       const t = rand(0.25, 0.75);
@@ -145,7 +145,7 @@ export class Traffic {
       const lane = this.laneFor(a.id, b.id, outer);
       const x = a.x + dx * t - uz * lane;
       const z = a.z + dz * t + ux * lane;
-      const d = Math.hypot(x - g.focus.x, z - g.focus.z);
+      const d = Math.hypot(x - cx, z - cz);
       if (d < minD || d > maxD) continue;
       // avoid popping in right in front of the camera
       const vx = x - cam.position.x;
@@ -209,9 +209,31 @@ export class Traffic {
     v.ai.toNode = next;
   }
 
+  /** Put a car that was not spawned on a lane (e.g. a scripted mission car) onto the nearest road link. */
+  private attachToRoad(v: Vehicle) {
+    const ai = v.ai;
+    const a = nearestNode(v.x, v.z);
+    let b = a.links[0];
+    let best = -Infinity;
+    for (const l of a.links) {
+      const n = ROAD_NODES[l];
+      const dot = ((n.x - a.x) * Math.sin(v.yaw) + (n.z - a.z) * Math.cos(v.yaw)) / (Math.hypot(n.x - a.x, n.z - a.z) || 1);
+      if (dot > best) {
+        best = dot;
+        b = l;
+      }
+    }
+    ai.fromNode = a.id;
+    ai.toNode = b;
+    ai.lane = this.laneFor(a.id, b, ai.outer);
+    ai.wps = [this.segStart(a.id, b, ai.lane), this.segEnd(a.id, b, ai.lane)];
+    ai.wp = 0;
+  }
+
   /** Follow lanes with simple collision avoidance. */
   driveTraffic(v: Vehicle, dt: number) {
     const ai = v.ai;
+    if (!ROAD_NODES[ai.toNode] || !ROAD_NODES[ai.fromNode]) this.attachToRoad(v);
     if (ai.wp >= ai.wps.length - 1) {
       this.extendRoute(v);
       if (ai.wps.length > 8) {

@@ -78,6 +78,7 @@ export interface HudState {
   settings: Settings;
   stats: { missions: number; totalMissions: number; tapes: number; totalTapes: number; stunts: number; totalStunts: number; races: number; totalRaces: number; kills: number; completion: number };
   deathReason: string;
+  deathTitle: string;
   set: (p: Partial<HudState>) => void;
 }
 
@@ -156,5 +157,6 @@ export const useHud = create<HudState>((set) => ({
   settings: loadSettings(),
   stats: { missions: 0, totalMissions: 0, tapes: 0, totalTapes: 0, stunts: 0, totalStunts: 0, races: 0, totalRaces: 0, kills: 0, completion: 0 },
   deathReason: '',
+  deathTitle: '重傷倒地',
   set: (p) => set(p),
 }));

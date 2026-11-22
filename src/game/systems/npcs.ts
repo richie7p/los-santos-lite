@@ -344,6 +344,18 @@ export class NPCs {
       a.move(dt, g.world, 0, 0, 20, false);
       return;
     }
+    // low heat and an unarmed suspect: try to make an arrest instead of shooting
+    if (a.team === 'police' && g.police.heat <= 2 && !g.playerThreat() && a.weapon !== 'fist') {
+      a.sprinting = dist > 6;
+      if (dist > 1.4) this.steerTo(a, tx, tz, dist > 6 ? 5.4 : 2.2, dt, dist > 8);
+      else a.move(dt, g.world, 0, 0, 20, false);
+      if (dist < 9) {
+        a.yaw = lerpAngle(a.yaw, Math.atan2(dx, dz), damp(10, dt));
+        a.pose = 'aim';
+        a.aimPitch = 0;
+      }
+      return;
+    }
     if (ai.alerted && dist < engage) {
       // attack: face, strafe a bit, shoot
       a.yaw = lerpAngle(a.yaw, Math.atan2(dx, dz), damp(10, dt));

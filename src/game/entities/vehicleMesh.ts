@@ -143,6 +143,116 @@ function figure(look: [number, number, number], x: number, y: number, z: number)
   return m;
 }
 
+// ---- motorcycle
+function riderGeometry(look: [number, number, number]) {
+  return cg(`rider${look.join('_')}`, () => {
+    const [skin, shirt, hair] = look;
+    const parts: [THREE.BufferGeometry, number][] = [
+      [new THREE.CapsuleGeometry(0.16, 0.26, 3, 8).scale(1.2, 1, 0.8).rotateX(0.45).translate(0, 0.42, 0.05), shirt],
+      [new THREE.SphereGeometry(0.13, 12, 10).translate(0, 0.86, 0.24), 0x1b1b1b], // helmet
+      [new THREE.BoxGeometry(0.2, 0.07, 0.04).translate(0, 0.85, 0.36), 0x4a6b8a], // visor
+      [new THREE.CapsuleGeometry(0.05, 0.36, 3, 6).rotateX(-1.0).translate(0.2, 0.52, 0.32), shirt],
+      [new THREE.CapsuleGeometry(0.05, 0.36, 3, 6).rotateX(-1.0).translate(-0.2, 0.52, 0.32), shirt],
+      [new THREE.SphereGeometry(0.045, 8, 6).translate(0.22, 0.4, 0.55), skin],
+      [new THREE.SphereGeometry(0.045, 8, 6).translate(-0.22, 0.4, 0.55), skin],
+      [new THREE.CapsuleGeometry(0.075, 0.36, 3, 6).rotateX(1.35).translate(0.14, 0.2, 0.22), 0x2b3a4a],
+      [new THREE.CapsuleGeometry(0.075, 0.36, 3, 6).rotateX(1.35).translate(-0.14, 0.2, 0.22), 0x2b3a4a],
+      [new THREE.CapsuleGeometry(0.06, 0.32, 3, 6).rotateX(0.25).translate(0.16, -0.05, 0.42), 0x2b3a4a],
+      [new THREE.CapsuleGeometry(0.06, 0.32, 3, 6).rotateX(0.25).translate(-0.16, -0.05, 0.42), 0x2b3a4a],
+      [new THREE.BoxGeometry(0.1, 0.07, 0.22).translate(0.16, -0.24, 0.48), 0x111111],
+      [new THREE.BoxGeometry(0.1, 0.07, 0.22).translate(-0.16, -0.24, 0.48), 0x111111],
+    ];
+    void hair;
+    return mergeGeometries(
+      parts.map(([g, c]) => {
+        const col = new THREE.Color(c);
+        const n = g.attributes.position.count;
+        const arr = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) col.toArray(arr, i * 3);
+        g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+        g.deleteAttribute('uv');
+        return ni(g);
+      }),
+    )!;
+  });
+}
+
+function createBikeRig(color: number): VehicleRig {
+  const s = VEHICLES.bike;
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  const paint = new THREE.MeshPhysicalMaterial({ color, metalness: 0.55, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1b1d20, metalness: 0.6, roughness: 0.4 });
+  const add = (g: THREE.BufferGeometry, m: THREE.Material) => {
+    const me = new THREE.Mesh(g, m);
+    me.castShadow = true;
+    body.add(me);
+    return me;
+  };
+  // painted fairing, tank and tail
+  add(
+    cg('bikePaint', () =>
+      mergeGeometries([
+        ni(new THREE.SphereGeometry(0.26, 12, 8).scale(0.9, 0.75, 1.35).translate(0, 0.86, 0.18)),
+        ni(new THREE.BoxGeometry(0.34, 0.32, 0.5).translate(0, 0.78, 0.62).rotateX(-0.3)),
+        ni(new THREE.BoxGeometry(0.22, 0.14, 0.55).translate(0, 0.86, -0.5).rotateX(0.18)),
+      ])!,
+    ),
+    paint,
+  );
+  // frame, engine, seat, exhaust, fork, handlebar
+  add(
+    cg('bikeDark', () =>
+      mergeGeometries([
+        ni(new THREE.BoxGeometry(0.3, 0.3, 0.45).translate(0, 0.48, 0.02)),
+        ni(new THREE.BoxGeometry(0.26, 0.08, 0.55).translate(0, 0.9, -0.22)),
+        ni(new THREE.CylinderGeometry(0.05, 0.06, 0.7, 8).rotateX(Math.PI / 2 - 0.2).translate(0.16, 0.42, -0.5)),
+        ni(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 6).rotateX(-0.45).translate(0.08, 0.6, 0.62)),
+        ni(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 6).rotateX(-0.45).translate(-0.08, 0.6, 0.62)),
+        ni(new THREE.CylinderGeometry(0.02, 0.02, 0.62, 6).rotateZ(Math.PI / 2).translate(0, 1.0, 0.5)),
+        ni(new THREE.BoxGeometry(0.06, 0.3, 0.9).translate(0, 0.45, -0.35).rotateX(0.15)),
+      ])!,
+    ),
+    dark,
+  );
+  const head = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2d8, emissiveIntensity: 0.4 });
+  const brake = new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff1a1a, emissiveIntensity: 0.4 });
+  add(cg('bikeHead', () => new THREE.SphereGeometry(0.07, 8, 6).scale(1, 0.8, 0.5).translate(0, 0.88, 0.98)), head);
+  add(cg('bikeTail', () => new THREE.BoxGeometry(0.14, 0.05, 0.03).translate(0, 0.9, -0.8)), brake);
+  const wheels: VehicleRig['wheels'] = [];
+  for (const [z, front] of [
+    [s.wheelbase / 2, true],
+    [-s.wheelbase / 2, false],
+  ] as [number, boolean][]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(0, s.wheelR, z);
+    const spin = new THREE.Group();
+    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+    wheel.scale.set(0.16, s.wheelR, s.wheelR);
+    wheel.castShadow = true;
+    spin.add(wheel);
+    pivot.add(spin);
+    body.add(pivot); // wheels lean with the bike
+    wheels.push({ pivot, spin, front, x: 0, z });
+  }
+  const seat = new THREE.Vector3(0, 0.82, -0.3);
+  const look = DRIVER_LOOKS[Math.floor(Math.random() * DRIVER_LOOKS.length)];
+  const mkRider = (l: [number, number, number]) => {
+    const m = new THREE.Mesh(riderGeometry(l), figureMat);
+    m.position.copy(seat);
+    m.castShadow = true;
+    m.visible = false;
+    body.add(m);
+    return m;
+  };
+  const driver = mkRider(look);
+  const driverPlayer = mkRider(PLAYER_LOOK);
+  const passenger = mkRider(DRIVER_LOOKS[1]);
+  passenger.position.z -= 0.45;
+  return { root, body, wheels, paint, brake, head, driverSeat: seat, driver, driverPlayer, passenger };
+}
+
 // ---- helicopter
 function createHeliRig(color: number): VehicleRig {
   const root = new THREE.Group();
@@ -328,6 +438,7 @@ function buildCached(t: VehicleType): Cached {
 
 export function createVehicleRig(t: VehicleType, color: number): VehicleRig {
   if (t === 'heli') return createHeliRig(color);
+  if (t === 'bike') return createBikeRig(color);
   const s = VEHICLES[t];
   const geo = cache.get(t) ?? buildCached(t);
   const root = new THREE.Group();

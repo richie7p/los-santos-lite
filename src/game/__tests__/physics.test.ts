@@ -74,6 +74,22 @@ describe('vehicle physics', () => {
   });
 });
 
+describe('motorbike', () => {
+  it('accelerates hard and leans into a right turn', () => {
+    const w = new StaticWorld();
+    const v = new Vehicle('bike', 0xd62828);
+    v.place(0, -200, 0);
+    v.input = { throttle: 1, steer: 0, handbrake: false };
+    step(v, w, events(), 1.5);
+    expect(v.forwardSpeed).toBeGreaterThan(15);
+    v.input = { throttle: 0.6, steer: 1, handbrake: false };
+    step(v, w, events(), 0.6);
+    // right turn: yaw decreases and the bike rolls to the right (positive visual roll)
+    expect(v.yawRate).toBeLessThan(0);
+    expect(v.visRoll).toBeGreaterThan(0.15);
+  });
+});
+
 describe('actor movement', () => {
   it('walks and is blocked by walls', () => {
     const w = new StaticWorld();

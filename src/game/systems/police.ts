@@ -163,6 +163,32 @@ export class Police {
     }
 
     this.updateHeli(dt);
+    this.updateArrest(dt);
+  }
+
+  /** Busted: an officer within arm's reach of a still, unarmed, on-foot suspect at low heat. */
+  bustT = 0;
+  private updateArrest(dt: number) {
+    const g = this.g;
+    const p = g.player;
+    let close = false;
+    if (this.heat > 0 && this.heat <= 2 && !p.vehicle && !p.dead && !g.playerThreat() && g.phase === 'playing') {
+      for (const a of g.actors) {
+        if (a.team !== 'police' || a.dead || a.vehicle) continue;
+        if (Math.hypot(a.x - p.x, a.z - p.z) < 1.9) {
+          close = true;
+          break;
+        }
+      }
+    }
+    if (close && p.speed < 2.2) {
+      this.bustT += dt;
+      if (this.bustT > 0.4) g.setSubtitle(`警察：「不許動！雙手舉起來！」（${Math.min(100, Math.round((this.bustT / 2.2) * 100))}%）`, 0.4);
+      if (this.bustT > 2.2) {
+        this.bustT = 0;
+        g.onBusted();
+      }
+    } else this.bustT = Math.max(0, this.bustT - dt * 2);
   }
 
   private dispatch() {

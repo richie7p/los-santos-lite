@@ -36,7 +36,11 @@ export const POIS: POI[] = [
 ];
 
 /** Vehicles that always wait at fixed spots (helipads, airport, showpieces). */
-export const FIXED_VEHICLES: { type: 'heli' | 'sports' | 'muscle' | 'suv' | 'pickup'; x: number; z: number; yaw: number }[] = [
+export const FIXED_VEHICLES: { type: 'heli' | 'sports' | 'muscle' | 'suv' | 'pickup' | 'bike'; x: number; z: number; yaw: number }[] = [
+  { type: 'bike', x: -1310, z: -62, yaw: Math.PI / 2 },
+  { type: 'bike', x: -140, z: 408, yaw: Math.PI / 2 },
+  { type: 'bike', x: 548, z: -990, yaw: Math.PI / 2 },
+  { type: 'bike', x: -219, z: -86.5, yaw: Math.PI / 2 },
   { type: 'heli', x: -760, z: 715, yaw: Math.PI / 2 },
   { type: 'heli', x: 150, z: -108, yaw: 0 },
   { type: 'sports', x: -1060, z: 684, yaw: 0 },
