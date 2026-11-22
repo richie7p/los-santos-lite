@@ -8,6 +8,7 @@ import { ClickToPlay, DeathScreen, LoadingScreen, MapScreen, PauseMenu, ShopPane
 declare global {
   interface Window {
     __solara?: ReturnType<Game['debug']>;
+    __solaraReady?: boolean;
   }
 }
 
@@ -28,7 +29,9 @@ export default function App() {
       try {
         g = new Game(el);
         g.init();
-        window.__solara = g.debug();
+        // test/cheat hooks: development builds, or explicitly opted in with ?debug
+        if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) window.__solara = g.debug();
+        window.__solaraReady = true;
         setGame(g);
       } catch (e) {
         console.error(e);

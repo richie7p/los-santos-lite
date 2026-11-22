@@ -173,6 +173,9 @@ export function PauseMenu({ game }: { game: Game }) {
             <Row label="反轉 Y 軸">
               <Toggle on={settings.invertY} onChange={(v) => game.updateSettings({ invertY: v })} />
             </Row>
+            <Row label="自動調整畫質（卡頓時降低解析度）">
+              <Toggle on={settings.autoQuality} onChange={(v) => game.updateSettings({ autoQuality: v })} />
+            </Row>
             <Row label="顯示 FPS">
               <Toggle on={settings.showFps} onChange={(v) => game.updateSettings({ showFps: v })} />
             </Row>

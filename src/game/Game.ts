@@ -223,10 +223,74 @@ export class Game {
     for (let i = 0; i < 40; i++) this.npcs.update(0.016);
     for (let i = 0; i < 8; i++) this.traffic.update(0.3);
 
-    useHud.getState().set({ hasSave: this.hasSave(), phase: 'title' });
-    this.phase = 'title';
+    // compile every shader behind the loading screen so the first frames don't hitch
+    this.phase = 'loading';
+    useHud.getState().set({ hasSave: this.hasSave(), phase: 'loading', loadingText: '正在準備畫面效果…' });
+    this.camera.position.set(240, 95, 0);
+    this.camera.lookAt(0, 20, 0);
+    const done = () => {
+      if (this.disposed || this.phase !== 'loading') return;
+      this.phase = 'title';
+      useHud.getState().set({ phase: 'title' });
+    };
+    const compile = (this.renderer as THREE.WebGLRenderer & { compileAsync?: (s: THREE.Object3D, c: THREE.Camera) => Promise<unknown> }).compileAsync;
+    if (compile) {
+      compile
+        .call(this.renderer, this.scene, this.camera)
+        .catch(() => undefined)
+        .finally(done);
+      setTimeout(done, 15000); // never get stuck on slow drivers
+    } else done();
     this.lastT = performance.now();
     this.animId = requestAnimationFrame(this.loop);
+  }
+
+  // ================================================================ adaptive resolution
+  /** Render-scale steps the auto quality can fall back to (multiplies the preset's pixel ratio). */
+  private static readonly SCALES = [1, 0.85, 0.72, 0.6];
+  private scaleLevel = 0;
+  private baseRatio = 1;
+  private perfAcc = 0;
+  private perfFrames = 0;
+  private perfCool = 0;
+  private lastWall = performance.now();
+
+  /** Watches frame time while playing; lowers render scale (and AO) when the game struggles, raises it again when there is headroom. */
+  private adaptQuality(rawDt: number) {
+    const s = useHud.getState().settings;
+    if (!s.autoQuality || this.phase !== 'playing') return;
+    if (document.hidden) {
+      // background tab: frame timing is meaningless
+      this.perfAcc = 0;
+      this.perfFrames = 0;
+      return;
+    }
+    rawDt = Math.min(rawDt, 1);
+    this.perfCool -= rawDt;
+    this.perfAcc += rawDt;
+    this.perfFrames++;
+    if (this.perfAcc < 2.5) return;
+    const fps = this.perfFrames / this.perfAcc;
+    this.perfAcc = 0;
+    this.perfFrames = 0;
+    if (this.perfCool > 0) return;
+    if (fps < 42 && this.scaleLevel < Game.SCALES.length - 1) {
+      this.scaleLevel++;
+      this.applyScale();
+      this.perfCool = 3;
+    } else if (fps > 58 && this.scaleLevel > 0) {
+      this.scaleLevel--;
+      this.applyScale();
+      this.perfCool = 8;
+    }
+  }
+
+  private applyScale() {
+    const q = useHud.getState().settings.quality;
+    this.renderer.setPixelRatio(this.baseRatio * Game.SCALES[this.scaleLevel]);
+    // ambient occlusion is the first thing to go on the high preset
+    this.post.gtao.enabled = q === 'high' && this.scaleLevel === 0;
+    this.onResize();
   }
 
   // ================================================================ lifecycle
@@ -314,6 +378,8 @@ export class Game {
   applyQuality(q: Quality) {
     const dpr = window.devicePixelRatio || 1;
     const ratio = q === 'low' ? Math.min(dpr, 1) * 0.75 : q === 'medium' ? Math.min(dpr, 1.25) : Math.min(dpr, 1.75);
+    this.baseRatio = ratio;
+    this.scaleLevel = 0;
     this.renderer.setPixelRatio(ratio);
     this.renderer.shadowMap.enabled = q !== 'low';
     this.env.setShadowQuality(q === 'high' ? 4096 : 2048, q !== 'low', q === 'high' ? 130 : 95);
@@ -339,6 +405,10 @@ export class Game {
     useHud.getState().set({ settings: s });
     saveSettings(s);
     if (patch.quality) this.applyQuality(patch.quality);
+    if (patch.autoQuality === false && this.scaleLevel !== 0) {
+      this.scaleLevel = 0;
+      this.applyScale();
+    }
     if (patch.volume !== undefined) this.audio.setVolume(patch.volume);
   }
 
@@ -724,6 +794,11 @@ export class Game {
       this.fpsN = 0;
     }
     try {
+      // measure with the wall clock: the frame delta above is capped for the simulation
+      const wall = performance.now();
+      const realDt = (wall - this.lastWall) / 1000;
+      this.lastWall = wall;
+      this.adaptQuality(realDt);
       this.frame(rawDt);
     } catch (e) {
       console.error(e);
@@ -733,7 +808,8 @@ export class Game {
 
   private frame(rawDt: number) {
     const ph = this.phase;
-    if (ph === 'title' || ph === 'loading') {
+    if (ph === 'loading') return;
+    if (ph === 'title') {
       this.attract += rawDt * 0.05;
       this.env.update(rawDt * 0.5, this.focus);
       this.world3d.update(rawDt, performance.now() / 1000);

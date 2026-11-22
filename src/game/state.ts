@@ -19,6 +19,8 @@ export interface Settings {
   invertY: boolean;
   fov: number;
   showFps: boolean;
+  /** Lower the render scale automatically when the frame rate drops. */
+  autoQuality: boolean;
 }
 
 export interface ShopItem {
@@ -86,6 +88,7 @@ export const DEFAULT_SETTINGS: Settings = {
   invertY: false,
   fov: 70,
   showFps: false,
+  autoQuality: true,
 };
 
 function loadSettings(): Settings {
