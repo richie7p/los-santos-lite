@@ -19,6 +19,8 @@ No install, no login, no external assets. Every model, texture, sound effect and
 - **A roughly 4 × 4 km island**: the 8×8-block city of Port Solara (downtown, residential, industrial and seaside districts, harbour and beach) surrounded by snow-capped northern mountains with a relay tower, a lake in the forest, a western desert with the town of Dustwater, and an international airport, all linked by a ring highway. Building facades are procedurally painted and light up at night.
 - **Vehicles and characters**: extruded-profile car bodies with clear-coat reflections; drivers and passengers are visible through the windows. Characters use an animated skeleton (walk, run, aim, fall).
 - **Motorbikes**: the Thunderbird R6 accelerates hard and leans into corners with a visible rider; a hard crash throws the rider off. Bikes are parked downtown, at the beach, in the town and by the lake, and they also appear in traffic.
+- **Rooms behind the windows**: every window shows a room with real parallax (interior mapping): offices, homes and shops with walls, floors, ceilings, furniture, blinds and curtains. At night each room is lit on its own, and the odd TV flickers blue. Ground-floor shops are convenience stores, cafes or boutiques.
+- **Night city**: shop windows spill warm light onto the pavement, street lamps pool light on the ground, headlights light the road ahead, and the sky has stars and a moon.
 - **Flyable helicopters** at the airport and hospital helipads: Space climbs, Shift descends, and you can land on rooftops.
 - **Particles**: muzzle flashes, tracers, bullet holes, sparks, blood, fireballs, smoke, tyre smoke and skid marks.
 
@@ -29,6 +31,7 @@ No install, no login, no external assets. Every model, texture, sound effect and
 - You can shoot a pistol or SMG from a car. Press `Q` for adrenaline slow motion.
 - Characters react when they are shot.
 - **Gamepads** (standard Xbox/PlayStation layout): left stick moves, right stick looks, RT fires/accelerates, LT aims/brakes, A jumps, B interacts, X reloads, Y enters or exits vehicles, LB/RB switch weapons, View opens the map and Menu pauses.
+- **Plays on computers and phones**: phones pick a preset from the GPU and keep a sharp resolution, and the game lowers resolution and then the preset if it stutters. Menus compact themselves for short landscape screens, prompts name the on-screen button to tap instead of a keyboard key, and the map supports pinch zoom.
 - **Phones and tablets**: a floating joystick on the left, drag on the right to look, and on-screen buttons to shoot, aim, jump and enter vehicles (play in landscape).
 
 ### Content
@@ -36,7 +39,8 @@ No install, no login, no external assets. Every model, texture, sound effect and
 - **1–5 level heat system**: pursuit cars that ram you, officers who get out and surround you, SWAT vans, and a police helicopter with a searchlight that you can shoot down. Break line of sight and leave the search zone to escape. At 1–2 stars, officers try to arrest you if you are unarmed; you then respawn at the police station after paying a fine and losing half your ammo. If you hold a weapon or have just fired, they shoot instead.
 - **Side activities**: 5 races including a ring-highway race and a runway drag race (gold/silver/bronze), courier delivery jobs, 9 stunt jumps, 30 hidden cassette tapes, convenience-store robberies, and armoured trucks that appear at random.
 - **Shops**: gun store (8 weapons, ammo, body armour), Han's Garage (repair; a respray clears heat) and a safehouse (save, sleep).
-- **Living world**: pedestrians who cross the street, lane-following traffic on every road (faster on highways), civilians who flee from gunfire, and visitors around the town, airport, beach and lake.
+- **Living world**: pedestrians who cross the street, people chatting on the pavement or walking with a phone at their ear, lane-following traffic on every road (faster on highways) and cars parked at the kerb, civilians who flee from gunfire, and visitors around the town, airport, beach and lake. Distant people and cars switch to lightweight models, so the streets can be busy without slowing the game down.
+- **Cinematic presentation**: the title screen cuts between golden-hour shots of downtown, a boulevard, the beach pier, the container port and the skyline from the hills. Story missions open with letterbox bars and end with a results card (reward, time, story progress).
 - **UI**: a rotating radar with island-wide GPS routing, a full map you can zoom, drag and click to set a waypoint, a weapon wheel, progress stats and saving (with an autosave every 2 minutes while free-roaming).
 - **Audio**: guns, engines, sirens and ambience synthesised with Web Audio, plus two in-car radio stations.
 

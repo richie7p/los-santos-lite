@@ -9,6 +9,9 @@
  */
 import * as THREE from 'three';
 
+/** Off on the low preset: windows fall back to their flat lit textures (cheaper on weak GPUs). */
+export const interiorSettings = { enabled: true };
+
 /** Shared by every interior material; the world updates these once per frame. */
 export const interiorUniforms = {
   uNightF: { value: 0 },
@@ -195,6 +198,7 @@ export function addInteriors(mat: THREE.MeshStandardMaterial, opts: InteriorOpti
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     prev?.call(mat, sh, r);
+    if (!interiorSettings.enabled) return;
     Object.assign(sh.uniforms, interiorUniforms, own);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vRoomPos;\nvarying vec3 vRoomNrm;')
@@ -221,6 +225,6 @@ export function addInteriors(mat: THREE.MeshStandardMaterial, opts: InteriorOpti
       );
   };
   const prevKey = mat.customProgramCacheKey?.bind(mat);
-  mat.customProgramCacheKey = () => `interiors-${useMaskTex ? 1 : 0}-${prevKey ? prevKey() : ''}`;
+  mat.customProgramCacheKey = () => `interiors-${interiorSettings.enabled ? 1 : 0}-${useMaskTex ? 1 : 0}-${prevKey ? prevKey() : ''}`;
   mat.needsUpdate = true;
 }

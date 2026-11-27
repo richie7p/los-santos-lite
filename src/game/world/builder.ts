@@ -823,11 +823,19 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
   addInstanced(root, lampGeometry(), lampMat, lampMats, true);
   addInstanced(root, new THREE.BoxGeometry(0.7, 0.18, 1.2).translate(0, 7.62, 2.2), lampHeadMat, lampMats, false);
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4e36, roughness: 0.95 });
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x4f7d3a, roughness: 0.85, flatShading: true });
-  addInstanced(root, new THREE.CylinderGeometry(0.16, 0.26, 3.2, 6).translate(0, 1.6, 0), trunkMat, treeMats, true);
-  addInstanced(root, treeCanopyGeometry(), leafMat, treeMats, true);
+  const leafMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82 });
+  addInstanced(root, treeTrunkGeometry(), trunkMat, treeMats, true);
+  {
+    // each tree a slightly different green
+    const im = addInstanced(root, treeCanopyGeometry(), leafMat, treeMats, true);
+    const tc = new THREE.Color();
+    if (im) {
+      for (let i = 0; i < treeMats.length; i++) im.setColorAt(i, tc.setRGB(0.86 + r() * 0.26, 0.9 + r() * 0.2, 0.8 + r() * 0.25));
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    }
+  }
   addInstanced(root, new THREE.CylinderGeometry(0.18, 0.3, 2.4, 6).translate(0, 1.2, 0), trunkMat, coniferMats, true);
-  addInstanced(root, coniferGeometry(), new THREE.MeshStandardMaterial({ color: 0x2f5a34, roughness: 0.9, flatShading: true }), coniferMats, true);
+  addInstanced(root, coniferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true }), coniferMats, true);
   addInstanced(root, palmTrunkGeometry(), new THREE.MeshStandardMaterial({ color: 0x8a6d4f, roughness: 0.9 }), palmMats, true);
   addInstanced(root, cactusGeometry(), new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.85, flatShading: true }), cactusMats, true);
   addInstanced(root, palmLeavesGeometry(), new THREE.MeshStandardMaterial({ color: 0x5b8f3c, roughness: 0.8, side: THREE.DoubleSide, flatShading: true }), palmMats, true);
@@ -1417,11 +1425,54 @@ function lampGeometry() {
     new THREE.CylinderGeometry(0.3, 0.35, 0.5, 8).translate(0, 0.25, 0),
   ])!;
 }
+/** Rounded crown of lumpy lobes with baked light: brighter, warmer leaves on top, shade underneath. */
 function treeCanopyGeometry() {
-  const a = new THREE.IcosahedronGeometry(2.1, 1).translate(0, 4.6, 0);
-  const b = new THREE.IcosahedronGeometry(1.6, 1).translate(0.9, 3.9, 0.5);
-  const c = new THREE.IcosahedronGeometry(1.5, 1).translate(-0.8, 4.0, -0.6);
-  return mergeGeometries([a, b, c].map((g) => (g.index ? g.toNonIndexed() : g)))!;
+  const r = rng(4242);
+  const lobes: [number, number, number, number][] = [
+    [0, 4.75, 0, 2.0],
+    [1.05, 4.15, 0.45, 1.45],
+    [-0.95, 4.25, -0.55, 1.4],
+    [0.25, 4.0, -1.05, 1.35],
+    [-0.35, 3.95, 1.0, 1.35],
+    [0.55, 5.6, 0.2, 1.2],
+    [-0.5, 5.45, 0.35, 1.1],
+  ];
+  const dark = new THREE.Color(0x2f5226);
+  const light = new THREE.Color(0x86a84a);
+  const c = new THREE.Color();
+  const parts = lobes.map(([x, y, z, rad]) => {
+    const g = new THREE.IcosahedronGeometry(rad, 1);
+    const pos = g.attributes.position as THREE.BufferAttribute;
+    const nrm = new Float32Array(pos.count * 3);
+    const col = new Float32Array(pos.count * 3);
+    const ph = r() * 10;
+    const tint = 0.9 + r() * 0.2;
+    for (let i = 0; i < pos.count; i++) {
+      const l = Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
+      const nx = pos.getX(i) / l;
+      const ny = pos.getY(i) / l;
+      const nz = pos.getZ(i) / l;
+      const bump = 1 + 0.12 * Math.sin(nx * 7.1 + ny * 3.3 + ph) * Math.sin(nz * 6.7 + nx * 2.1) + 0.05 * Math.sin(ny * 13 + nz * 11 + ph);
+      pos.setXYZ(i, nx * rad * bump, ny * rad * bump, nz * rad * bump);
+      nrm.set([nx, ny, nz], i * 3);
+      // height in the crown (0 = underside, 1 = top) and how much the leaves face the sky
+      const h = Math.min(1, Math.max(0, (y + ny * rad - 3.0) / 3.6));
+      c.copy(dark).lerp(light, Math.min(1, h * 0.8 + Math.max(0, ny) * 0.35)).multiplyScalar(tint);
+      col.set([c.r, c.g, c.b], i * 3);
+    }
+    g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return g.translate(x, y, z);
+  });
+  return mergeGeometries(parts)!;
+}
+/** Trunk with two limbs reaching into the crown. */
+function treeTrunkGeometry() {
+  return mergeGeometries([
+    new THREE.CylinderGeometry(0.16, 0.26, 3.4, 7).translate(0, 1.7, 0),
+    new THREE.CylinderGeometry(0.07, 0.12, 1.8, 5).translate(0, 0.9, 0).rotateZ(-0.6).translate(0.05, 3.0, 0),
+    new THREE.CylinderGeometry(0.06, 0.11, 1.6, 5).translate(0, 0.8, 0).rotateX(0.65).translate(0, 3.1, 0.05),
+  ])!;
 }
 function palmTrunkGeometry() {
   const parts: THREE.BufferGeometry[] = [];
@@ -1510,12 +1561,31 @@ function helipadMesh(root: THREE.Group, x: number, z: number, y: number) {
   root.add(m);
 }
 
+/** Four tiers of needles, darker in the shade of the tier above. */
 function coniferGeometry() {
-  return mergeGeometries([
-    new THREE.ConeGeometry(2.4, 3.6, 8).translate(0, 3.4, 0),
-    new THREE.ConeGeometry(1.9, 3.2, 8).translate(0, 5.2, 0),
-    new THREE.ConeGeometry(1.3, 2.8, 8).translate(0, 6.9, 0),
-  ])!;
+  const tiers: [number, number, number][] = [
+    [2.5, 3.2, 3.2],
+    [2.0, 3.0, 4.8],
+    [1.5, 2.7, 6.3],
+    [0.95, 2.3, 7.6],
+  ];
+  const deep = new THREE.Color(0x1f3d26);
+  const tip = new THREE.Color(0x4a7a45);
+  const c = new THREE.Color();
+  return mergeGeometries(
+    tiers.map(([rad, h, y]) => {
+      const g = new THREE.ConeGeometry(rad, h, 9, 1).toNonIndexed();
+      const pos = g.attributes.position as THREE.BufferAttribute;
+      const col = new Float32Array(pos.count * 3);
+      for (let i = 0; i < pos.count; i++) {
+        const t = (pos.getY(i) + h / 2) / h; // 0 at the skirt, 1 at the tip
+        c.copy(deep).lerp(tip, 0.25 + t * 0.6);
+        col.set([c.r, c.g, c.b], i * 3);
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      return g.translate(0, y, 0);
+    }),
+  )!;
 }
 
 function cactusGeometry() {

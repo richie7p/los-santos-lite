@@ -12,6 +12,7 @@ import { Environment } from './render/environment';
 import { FX } from './render/fx';
 import { Grass } from './render/grass';
 import { HeadlightBeams } from './render/headlights';
+import { interiorSettings } from './render/interiors';
 import { PostFX } from './render/post';
 import { AudioEngine } from './systems/audio';
 import { Combat } from './systems/combat';
@@ -452,6 +453,7 @@ export class Game {
     this.post.gtao.enabled = q === 'high';
     this.grass.enabled = q !== 'low';
     this.grass.density = touch ? 0.5 : 1;
+    interiorSettings.enabled = q !== 'low'; // materials recompile below (needsUpdate)
     this.env.flareEnabled = q !== 'low';
     if (this.post.smaa) this.post.smaa.enabled = q === 'high';
     this.traffic.maxCars = touch ? (q === 'low' ? 12 : q === 'medium' ? 16 : 20) : q === 'low' ? 16 : q === 'medium' ? 22 : 28;
