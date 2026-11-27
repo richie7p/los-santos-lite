@@ -145,7 +145,8 @@ export class Game {
 
   constructor(private container: HTMLElement) {
     const s = useHud.getState().settings;
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false });
+    // hardware MSAA on the canvas (used directly by the low preset; post-processing has its own MSAA target)
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', stencil: false });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.92;
@@ -439,7 +440,7 @@ export class Game {
           ? Math.min(dpr, 1.5)
           : Math.min(dpr, 2)
       : q === 'low'
-        ? Math.min(dpr, 1) * 0.75
+        ? Math.min(dpr, 1)
         : q === 'medium'
           ? Math.min(dpr, 1.25)
           : Math.min(dpr, 1.75);
@@ -455,7 +456,7 @@ export class Game {
     this.grass.density = touch ? 0.5 : 1;
     interiorSettings.enabled = q !== 'low'; // materials recompile below (needsUpdate)
     this.env.flareEnabled = q !== 'low';
-    if (this.post.smaa) this.post.smaa.enabled = q === 'high';
+    if (this.post.smaa) this.post.smaa.enabled = q === 'high' || (q === 'medium' && !this.post.msaa);
     this.traffic.maxCars = touch ? (q === 'low' ? 12 : q === 'medium' ? 16 : 20) : q === 'low' ? 16 : q === 'medium' ? 22 : 28;
     // far people and cars are single-mesh LODs, so the streets can be busier
     this.npcs.maxPeds = touch ? (q === 'low' ? 28 : q === 'medium' ? 36 : 44) : q === 'low' ? 36 : q === 'medium' ? 52 : 64;

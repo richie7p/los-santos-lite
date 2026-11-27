@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three';
 import { RoomKind, addInteriors } from '../render/interiors';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { StaticWorld } from '../core/collision';
 import { rng, smoothstep } from '../core/math';
 import {
@@ -275,9 +275,9 @@ export function buildDetails(ctx: DetailCtx) {
   const pallet = I(parts([[box(1.2, 0.14, 1.0, 0, 0.07), 0x8a6a45], [box(1.1, 0.8, 0.9, 0, 0.55), 0xc9b48a]]));
   const barrel = I(parts([[cyl(0.32, 0.32, 0.95, 10, 0, 0.48), 0x2f5d8a], [cyl(0.33, 0.33, 0.05, 10, 0, 0.3), 0x1d3d5c], [cyl(0.33, 0.33, 0.05, 10, 0, 0.7), 0x1d3d5c]]));
   const bollard = I(parts([[cyl(0.22, 0.26, 0.6, 8, 0, 0.3), 0x2b2b2b], [cyl(0.32, 0.22, 0.12, 8, 0, 0.62), 0x2b2b2b]]));
-  const rock = I(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshStandardMaterial({ color: 0x8a857c, roughness: 0.95, flatShading: true }));
-  const redRock = I(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshStandardMaterial({ color: 0xa8603c, roughness: 0.95, flatShading: true }));
-  const shrub = I(new THREE.IcosahedronGeometry(1, 0).scale(1, 0.6, 1), new THREE.MeshStandardMaterial({ color: 0x8a7a4a, roughness: 1, flatShading: true }));
+  const rock = I(boulderGeometry(1.3), new THREE.MeshStandardMaterial({ color: 0x8a857c, roughness: 0.92 }));
+  const redRock = I(boulderGeometry(4.7), new THREE.MeshStandardMaterial({ color: 0xa8603c, roughness: 0.92 }));
+  const shrub = I(boulderGeometry(2.2, 0.32, Math.PI).scale(1, 0.6, 1), new THREE.MeshStandardMaterial({ color: 0x8a7a4a, roughness: 1 }));
   const log = I(cyl(0.32, 0.36, 1, 8).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5e4630, roughness: 0.95 }));
   const picnic = I(
     parts([
@@ -861,7 +861,7 @@ export function buildDetails(ctx: DetailCtx) {
   // ======================================================== DESERT
   {
     // mesas and buttes
-    const mesaMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
+    const mesaMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
     const spots: [number, number][] = [];
     for (let k = 0; k < 60 && spots.length < 12; k++) {
       const x = -1750 + r() * 1100;
@@ -882,15 +882,19 @@ export function buildDetails(ctx: DetailCtx) {
       for (let t = 0; t < nT; t++) {
         const rr = R * (1 - t * 0.28);
         const hh = (H / nT) * (0.8 + r() * 0.4);
-        const g = new THREE.CylinderGeometry(rr * 0.92, rr, hh, 9, 1);
+        const g = new THREE.CylinderGeometry(rr * 0.92, rr, hh, 16, 2);
         const p = g.attributes.position as THREE.BufferAttribute;
+        const seed = r() * 10;
         for (let i = 0; i < p.count; i++) {
-          const k2 = 0.85 + ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 0.3;
+          // jitter by angle (not vertex index) so cap and wall vertices stay welded
+          const a = Math.atan2(p.getZ(i), p.getX(i));
+          const k2 = 0.9 + 0.12 * Math.sin(a * 3 + seed) + 0.07 * Math.sin(a * 7 + seed * 2.3);
           p.setX(i, p.getX(i) * k2);
           p.setZ(i, p.getZ(i) * k2);
         }
         g.translate(0, y + hh / 2, 0);
-        tiers.push([g, bands[t % bands.length]]);
+        // rounded cliffs with a crisp rim
+        tiers.push([toCreasedNormals(g, 0.75), bands[t % bands.length]]);
         y += hh;
       }
       const mesh = new THREE.Mesh(parts(tiers), mesaMat);
@@ -1330,3 +1334,18 @@ function catenary(out: number[], a: THREE.Vector3, b: THREE.Vector3, off: number
   }
 }
 
+
+/** Lumpy boulder or bush: displaced icosahedron with creased normals (smooth, a few crisp edges). */
+function boulderGeometry(seed: number, amp = 0.2, crease = 0.95) {
+  const g = new THREE.IcosahedronGeometry(1, 1);
+  const p = g.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i);
+    const y = p.getY(i);
+    const z = p.getZ(i);
+    // position-based, so vertices shared by several faces move together (no cracks)
+    const n = 1 + amp * Math.sin(x * 3.1 + seed) * Math.sin(y * 2.7 + z * 1.9 + seed * 1.3) + amp * 0.45 * Math.sin(z * 5.3 + x * 4.1 + seed);
+    p.setXYZ(i, x * n, y * n * 0.82, z * n);
+  }
+  return toCreasedNormals(g, crease);
+}

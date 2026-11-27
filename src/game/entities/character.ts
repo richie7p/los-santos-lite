@@ -287,7 +287,7 @@ export class CharacterRig {
     this.head.add(this.m(body.head, bodyMat));
 
     const arm = (sh: THREE.Group, el: THREE.Group, side: number) => {
-      sh.position.set(side * body.shoulderX, 0.49, 0);
+      sh.position.set(side * body.shoulderX, 0.475, 0);
       this.spine.add(sh);
       sh.add(this.m(side > 0 ? body.upperArmL : body.upperArmR, bodyMat));
       el.position.y = -0.28;
@@ -337,14 +337,20 @@ export class CharacterRig {
     this.shR.rotation.z = -0.1;
     this.root.updateMatrixWorld(true);
     const inv = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
+    // far away a coarse body is plenty: same parts, about a third of the triangles
+    const low = buildBody(this.outfit, 0.5);
+    const full = this.body;
+    const swap = new Map<THREE.BufferGeometry, THREE.BufferGeometry>();
+    for (const k of ['pelvis', 'torso', 'neck', 'head', 'upperArmL', 'upperArmR', 'foreArmL', 'foreArmR', 'thigh', 'shin'] as const) swap.set(full[k], low[k]);
     const parts: THREE.BufferGeometry[] = [];
     this.pose.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh || m === this.weaponMesh || !m.geometry.attributes.color) return;
+      const src = swap.get(m.geometry) ?? m.geometry;
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', m.geometry.attributes.position.clone());
-      g.setAttribute('normal', m.geometry.attributes.normal.clone());
-      g.setAttribute('color', m.geometry.attributes.color.clone());
+      g.setAttribute('position', src.attributes.position.clone());
+      g.setAttribute('normal', src.attributes.normal.clone());
+      g.setAttribute('color', src.attributes.color.clone());
       g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
       parts.push(g);
     });
@@ -354,6 +360,7 @@ export class CharacterRig {
     });
     const merged = mergeGeometries(parts)!;
     parts.forEach((g) => g.dispose());
+    for (const g of new Set(swap.values())) g.dispose();
     merged.computeBoundingSphere();
     const mesh = new THREE.Mesh(merged, bodyMat);
     mesh.castShadow = false;

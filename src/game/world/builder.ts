@@ -834,11 +834,11 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
       if (im.instanceColor) im.instanceColor.needsUpdate = true;
     }
   }
-  addInstanced(root, new THREE.CylinderGeometry(0.18, 0.3, 2.4, 6).translate(0, 1.2, 0), trunkMat, coniferMats, true);
-  addInstanced(root, coniferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true }), coniferMats, true);
+  addInstanced(root, new THREE.CylinderGeometry(0.18, 0.3, 2.4, 10).translate(0, 1.2, 0), trunkMat, coniferMats, true);
+  addInstanced(root, coniferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), coniferMats, true);
   addInstanced(root, palmTrunkGeometry(), new THREE.MeshStandardMaterial({ color: 0x8a6d4f, roughness: 0.9 }), palmMats, true);
-  addInstanced(root, cactusGeometry(), new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.85, flatShading: true }), cactusMats, true);
-  addInstanced(root, palmLeavesGeometry(), new THREE.MeshStandardMaterial({ color: 0x5b8f3c, roughness: 0.8, side: THREE.DoubleSide, flatShading: true }), palmMats, true);
+  addInstanced(root, cactusGeometry(), new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.85 }), cactusMats, true);
+  addInstanced(root, palmLeavesGeometry(), new THREE.MeshStandardMaterial({ color: 0x5b8f3c, roughness: 0.8, side: THREE.DoubleSide }), palmMats, true);
   addInstanced(root, signalGeometry(), new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.6, metalness: 0.5 }), signalMats, true);
   const signalLightMat = new THREE.MeshStandardMaterial({ color: 0x33ff88, emissive: 0x22ff66, emissiveIntensity: 1.5 });
   addInstanced(root, new THREE.SphereGeometry(0.16, 8, 6).translate(0.18, 5.6, 4.2), signalLightMat, signalMats, false);
@@ -1420,9 +1420,9 @@ function addInstanced(root: THREE.Group, g: THREE.BufferGeometry, m: THREE.Mater
 // ------------------------------------------------------------ prop geometries
 function lampGeometry() {
   return mergeGeometries([
-    new THREE.CylinderGeometry(0.12, 0.18, 7.8, 8).translate(0, 3.9, 0),
-    new THREE.BoxGeometry(0.12, 0.12, 2.4).translate(0, 7.7, 1.1),
-    new THREE.CylinderGeometry(0.3, 0.35, 0.5, 8).translate(0, 0.25, 0),
+    new THREE.CylinderGeometry(0.12, 0.18, 7.8, 14).translate(0, 3.9, 0),
+    new THREE.CylinderGeometry(0.06, 0.06, 2.4, 10).rotateX(Math.PI / 2).translate(0, 7.7, 1.1),
+    new THREE.CylinderGeometry(0.3, 0.35, 0.5, 16).translate(0, 0.25, 0),
   ])!;
 }
 /** Rounded crown of lumpy lobes with baked light: brighter, warmer leaves on top, shade underneath. */
@@ -1469,7 +1469,7 @@ function treeCanopyGeometry() {
 /** Trunk with two limbs reaching into the crown. */
 function treeTrunkGeometry() {
   return mergeGeometries([
-    new THREE.CylinderGeometry(0.16, 0.26, 3.4, 7).translate(0, 1.7, 0),
+    new THREE.CylinderGeometry(0.16, 0.26, 3.4, 12).translate(0, 1.7, 0),
     new THREE.CylinderGeometry(0.07, 0.12, 1.8, 5).translate(0, 0.9, 0).rotateZ(-0.6).translate(0.05, 3.0, 0),
     new THREE.CylinderGeometry(0.06, 0.11, 1.6, 5).translate(0, 0.8, 0).rotateX(0.65).translate(0, 3.1, 0.05),
   ])!;
@@ -1477,19 +1477,22 @@ function treeTrunkGeometry() {
 function palmTrunkGeometry() {
   const parts: THREE.BufferGeometry[] = [];
   for (let k = 0; k < 6; k++) {
-    parts.push(new THREE.CylinderGeometry(0.2 - k * 0.012, 0.24 - k * 0.012, 1.4, 6).translate(k * 0.08, 0.7 + k * 1.3, 0));
+    parts.push(new THREE.CylinderGeometry(0.2 - k * 0.012, 0.24 - k * 0.012, 1.4, 12).translate(k * 0.08, 0.7 + k * 1.3, 0));
   }
   return mergeGeometries(parts)!;
 }
 function palmLeavesGeometry() {
   const parts: THREE.BufferGeometry[] = [];
   for (let k = 0; k < 7; k++) {
-    const g = new THREE.PlaneGeometry(0.9, 3.6, 1, 3);
+    const g = new THREE.PlaneGeometry(0.9, 3.6, 2, 8);
     const p = g.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) {
       const y = p.getY(i) + 1.8;
-      p.setZ(i, -y * y * 0.09);
+      // arched frond, narrowing to a point
+      p.setZ(i, -y * y * 0.09 + Math.abs(p.getX(i)) * 0.25);
+      p.setX(i, p.getX(i) * (1 - (y / 3.6) * 0.85));
     }
+    g.computeVertexNormals();
     g.translate(0, 1.8, 0);
     g.rotateX(-1.25);
     g.rotateY((k / 7) * Math.PI * 2);
@@ -1574,7 +1577,7 @@ function coniferGeometry() {
   const c = new THREE.Color();
   return mergeGeometries(
     tiers.map(([rad, h, y]) => {
-      const g = new THREE.ConeGeometry(rad, h, 9, 1).toNonIndexed();
+      const g = new THREE.ConeGeometry(rad, h, 14, 2).toNonIndexed();
       const pos = g.attributes.position as THREE.BufferAttribute;
       const col = new Float32Array(pos.count * 3);
       for (let i = 0; i < pos.count; i++) {
@@ -1590,18 +1593,18 @@ function coniferGeometry() {
 
 function cactusGeometry() {
   return mergeGeometries([
-    new THREE.CylinderGeometry(0.28, 0.32, 3.2, 7).translate(0, 1.6, 0),
-    new THREE.CylinderGeometry(0.18, 0.18, 1.2, 6).translate(0.55, 1.9, 0),
-    new THREE.CylinderGeometry(0.18, 0.18, 0.6, 6).rotateZ(Math.PI / 2).translate(0.3, 1.3, 0),
-    new THREE.CylinderGeometry(0.16, 0.16, 0.9, 6).translate(-0.5, 2.3, 0),
-    new THREE.CylinderGeometry(0.16, 0.16, 0.55, 6).rotateZ(Math.PI / 2).translate(-0.27, 1.85, 0),
+    new THREE.CapsuleGeometry(0.3, 2.9, 4, 12).translate(0, 1.6, 0),
+    new THREE.CapsuleGeometry(0.18, 1.0, 3, 10).translate(0.55, 1.95, 0),
+    new THREE.CylinderGeometry(0.18, 0.18, 0.6, 10).rotateZ(Math.PI / 2).translate(0.3, 1.3, 0),
+    new THREE.CapsuleGeometry(0.16, 0.7, 3, 10).translate(-0.5, 2.35, 0),
+    new THREE.CylinderGeometry(0.16, 0.16, 0.55, 10).rotateZ(Math.PI / 2).translate(-0.27, 1.85, 0),
   ])!;
 }
 
 function signalGeometry() {
   return mergeGeometries([
-    new THREE.CylinderGeometry(0.12, 0.14, 6, 8).translate(0, 3, 0),
-    new THREE.BoxGeometry(0.14, 0.14, 4.4).translate(0, 5.9, 2.2),
+    new THREE.CylinderGeometry(0.12, 0.14, 6, 14).translate(0, 3, 0),
+    new THREE.CylinderGeometry(0.07, 0.07, 4.4, 10).rotateX(Math.PI / 2).translate(0, 5.9, 2.2),
     new THREE.BoxGeometry(0.45, 1.3, 0.4).translate(0, 5.6, 4.2),
   ])!;
 }

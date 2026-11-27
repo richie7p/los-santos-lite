@@ -1,6 +1,6 @@
 /** Procedural vehicle models built from extruded side profiles. */
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { type VehicleSpec, type VehicleType, VEHICLES } from '../data';
 import { signTexture } from '../world/textures';
 
@@ -50,11 +50,27 @@ const wheelGeo = (() => {
     return ni(g);
   };
   return mergeGeometries([
-    colorize(new THREE.CylinderGeometry(1, 1, 1, 20).rotateZ(Math.PI / 2), 0x141414),
-    colorize(new THREE.CylinderGeometry(0.62, 0.62, 1.04, 10).rotateZ(Math.PI / 2), 0x8a9096),
+    // tyre with rounded shoulders (lathe) and a smooth rim
+    colorize(
+      new THREE.LatheGeometry(
+        [
+          [0.6, -0.5],
+          [0.88, -0.5],
+          [0.96, -0.46],
+          [1.0, -0.36],
+          [1.0, 0.36],
+          [0.96, 0.46],
+          [0.88, 0.5],
+          [0.6, 0.5],
+        ].map(([r, y]) => new THREE.Vector2(r, y)),
+        32,
+      ).rotateZ(Math.PI / 2),
+      0x141414,
+    ),
+    colorize(new THREE.CylinderGeometry(0.62, 0.62, 1.04, 28).rotateZ(Math.PI / 2), 0x8a9096),
     // five spokes and a hub on each side
     ...[-1, 1].flatMap((side) => [
-      colorize(new THREE.CylinderGeometry(0.16, 0.16, 0.08, 10).rotateZ(Math.PI / 2).translate(side * 0.53, 0, 0), 0xe2e6ea),
+      colorize(new THREE.CylinderGeometry(0.16, 0.16, 0.08, 16).rotateZ(Math.PI / 2).translate(side * 0.53, 0, 0), 0xe2e6ea),
       ...[0, 1, 2, 3, 4].map((k) =>
         colorize(
           new THREE.BoxGeometry(0.05, 0.1, 0.5)
@@ -368,14 +384,14 @@ function extrude(shape: THREE.Shape, width: number, bevel: number) {
     bevelEnabled: bevel > 0,
     bevelThickness: bevel,
     bevelSize: bevel,
-    bevelSegments: 3,
-    curveSegments: 10,
+    bevelSegments: 5,
+    curveSegments: 20,
   });
   g.translate(0, 0, -(width - bevel * 2) / 2);
   // profile X -> car Z (forward), extrusion Z -> car X (sideways)
   g.rotateY(-Math.PI / 2);
-  g.computeVertexNormals();
-  return g;
+  // smooth across the bevels and curves, keep hard creases (glossy body without faceting)
+  return toCreasedNormals(g, 0.6);
 }
 
 function buildCached(t: VehicleType): Cached {

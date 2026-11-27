@@ -51,7 +51,7 @@ const GradeShader = {
       // damage red edges
       col = mix(col, vec3(0.55, 0.0, 0.0), uDamage * smoothstep(0.3, 0.75, d) * 0.85);
       // film grain
-      col += (hash(uv * 900.0 + uTime) - 0.5) * 0.025;
+      col += (hash(uv * 900.0 + uTime) - 0.5) * 0.006;
       gl_FragColor = vec4(col * uFade, 1.0);
     }
   `,
@@ -65,6 +65,8 @@ export class PostFX {
   /** Ground-truth ambient occlusion (contact shadows); high quality only. */
   gtao: GTAOPass;
   enabled = true;
+  /** True when the scene is rendered with 4x MSAA. */
+  readonly msaa: boolean;
   /** Objects the AO pass must ignore (sky dome, cloud layer, sea): GTAOPass only skips points and lines. */
   readonly noAO: THREE.Object3D[] = [];
 
@@ -76,7 +78,15 @@ export class PostFX {
     h: number,
     useSMAA: boolean,
   ) {
-    this.composer = new EffectComposer(renderer);
+    // 4x MSAA on the scene render: smooth edges on every preset that uses post-processing
+    // (multisampled half-float targets need EXT_color_buffer_float; otherwise SMAA covers it)
+    const msaa = renderer.extensions.has('EXT_color_buffer_float') && renderer.capabilities.maxSamples >= 4;
+    this.msaa = msaa;
+    const target = new THREE.WebGLRenderTarget(Math.max(1, w * renderer.getPixelRatio()), Math.max(1, h * renderer.getPixelRatio()), {
+      type: THREE.HalfFloatType,
+      samples: msaa ? 4 : 0,
+    });
+    this.composer = new EffectComposer(renderer, target);
     this.composer.addPass(new RenderPass(scene, camera));
     this.gtao = new GTAOPass(scene, camera, w, h);
     this.gtao.updateGtaoMaterial({ radius: 1.6, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: 12, distanceFallOff: 1 });
@@ -95,10 +105,10 @@ export class PostFX {
     this.composer.addPass(new OutputPass());
     this.grade = new ShaderPass(GradeShader);
     this.composer.addPass(this.grade);
-    if (useSMAA) {
-      this.smaa = new SMAAPass();
-      this.composer.addPass(this.smaa);
-    }
+    // SMAA on top (high preset, or medium when MSAA is unavailable); toggled per preset
+    this.smaa = new SMAAPass();
+    this.smaa.enabled = useSMAA;
+    this.composer.addPass(this.smaa);
     this.setSize(w, h);
   }
 
