@@ -1,25 +1,72 @@
-# Los Santos Lite
+# Port Solara Streets · 索拉港街頭
 
 [繁體中文](README.md) | **English**
 
-**Los Santos Lite** — A GTA V-inspired 3D open-world third-person shooter, 3-protagonist satellite switch, and heist action sandbox in the browser.
+A 3D open-world crime action sandbox that runs in the browser. Drive, fight, shake off the police, and rise from street kid to legend of Port Solara.
 
-Switch seamlessly between Michael, Franklin, and Trevor via the iconic 3-stage satellite sky-cam; hold `Tab` to open the 8-slot slow-motion radial weapon wheel; unleash Bullet Time, Driving Focus, and Red Mist rampage abilities; and pull off the Pacific Standard Bank Heist against 5-star SWAT teams and armed police helicopters.
+No install, no login, no external assets. Every model, texture, sound effect and radio track is generated in code at runtime.
 
-## Key Features
+---
 
-- **3-Protagonist Sky-Cam Switch (`[1]` / `[2]` / `[3]`)**:
-  - **Michael De Santa**: *Bullet Time* — slows time by 65%, zero recoil, and 2.5x headshot damage.
-  - **Franklin Clinton**: *Driving Focus* — slows time while driving, doubles cornering grip, and enables drive-by SMG fire.
-  - **Trevor Philips**: *Red Mist* — deals double weapon/explosive damage, takes 85% less damage, and fires without draining the magazine.
-- **8-Slot Radial Weapon Wheel (`[Tab]`)**:
-  - Unarmed Melee, Combat Pistol, Micro SMG (Drive-By capable), Pump Shotgun, Carbine Rifle, Heavy Sniper (8x Optics), RPG Rocket Launcher, and Widowmaker Minigun.
-- **1–5 Star Armed Police, SWAT & Helicopter System**:
-  - Escalates from LSPD patrol cruisers to NOOSE tactical squads and airborne **Police Maverick helicopters** with searchlights and snipers.
-- **3 Replayable Heist Contracts & Interactive Shops**:
-  - *The Pacific Standard Job*, *Elysian Arms Takedown*, and *Simeon Exotic Repo*, plus **Ammu-Nation** and **Los Santos Customs**.
+## Features
 
-## Quick Start
+### Graphics
+- **Day/night cycle and weather**: physical sky, sun/moon lighting with real-time shadows, stars, lit windows, street lamps and neon billboards at night. Random rain makes roads wet and reflective and the sky overcast; storms bring lightning and thunder, and wet roads reduce grip.
+- **Detailed regions**: downtown storefronts with signs and awnings (lit at night), bus stops, hydrants, bins, planters and manholes; hedges, mailboxes and backyard pools in the suburbs; smoking chimneys, storage tanks and pallets in the industrial district; a freight train, floodlights, forklifts and tugboats at the harbour; lifeguard towers, volleyball nets, sunbeds and food kiosks on the beach; conifer forests, boulders, campfires and a lookout tower in the mountains and by the lake; mesas, a trailer park, windpumps and telegraph lines in the desert; boardwalks, porches, a church and a neon motel sign in Dustwater; fences, jet bridges, baggage carts, a fuel truck, a windsock and a spinning radar at the airport; power pylons and guardrails along the highway, and farmland with silos in the west.
+- **Post-processing**: bloom, ACES tone mapping, colour grading, vignette, SMAA and GTAO ambient occlusion (high quality). Taking damage or using slow motion adds chromatic aberration and desaturation.
+- **Sky and water**: a drifting cloud layer (tinted at sunset, heavier in rain) and a sun lens flare; sea and lake water shade from turquoise shallows to deep blue, with foam along the shore.
+- **Surface detail**: building facades have normal-mapped, recessed windows; wind-swept grass grows on lawns and fields near the camera; cars have licence plates, door seams and spoked rims; characters have sculpted bodies (male and female builds of varying height and weight), faces, fingers and shoe soles, with jackets, short sleeves, shorts, skirts, caps, sunglasses, watches, backpacks, chains and beards; buildings have floor ledges, cornices, 3D balconies, rooftop machinery, satellite dishes and glowing crowns at night, houses have chimneys, porches, garage doors and solar panels, and downtown streets are lined with trees.
+- **A roughly 4 × 4 km island**: the 8×8-block city of Port Solara (downtown, residential, industrial and seaside districts, harbour and beach) surrounded by snow-capped northern mountains with a relay tower, a lake in the forest, a western desert with the town of Dustwater, and an international airport, all linked by a ring highway. Building facades are procedurally painted and light up at night.
+- **Vehicles and characters**: extruded-profile car bodies with clear-coat reflections; drivers and passengers are visible through the windows. Characters use an animated skeleton (walk, run, aim, fall).
+- **Motorbikes**: the Thunderbird R6 accelerates hard and leans into corners with a visible rider; a hard crash throws the rider off. Bikes are parked downtown, at the beach, in the town and by the lake, and they also appear in traffic.
+- **Rooms behind the windows**: every window shows a room with real parallax (interior mapping): offices, homes and shops with walls, floors, ceilings, furniture, blinds and curtains. At night each room is lit on its own, and the odd TV flickers blue. Ground-floor shops are convenience stores, cafes or boutiques.
+- **Night city**: shop windows spill warm light onto the pavement, street lamps pool light on the ground, headlights light the road ahead, and the sky has stars and a moon.
+- **Flyable helicopters** at the airport and hospital helipads: Space climbs, Shift descends, and you can land on rooftops.
+- **Particles**: muzzle flashes, tracers, bullet holes, sparks, blood, fireballs, smoke, tyre smoke and skid marks.
+
+### Feel
+- Over-the-shoulder third-person camera, zoom when aiming, first-person sniper scope.
+- Recoil, crosshair bloom, hit and kill markers, camera shake.
+- Arcade driving with weight, handbrake drifts, body roll, ramp jumps, collision damage, fires and explosions.
+- You can shoot a pistol or SMG from a car. Press `Q` for adrenaline slow motion.
+- Characters react when they are shot.
+- **Gamepads** (standard Xbox/PlayStation layout): left stick moves, right stick looks, RT fires/accelerates, LT aims/brakes, A jumps, B interacts, X reloads, Y enters or exits vehicles, LB/RB switch weapons, View opens the map and Menu pauses.
+- **Plays on computers and phones**: phones pick a preset from the GPU and keep a sharp resolution, and the game lowers resolution and then the preset if it stutters. Menus compact themselves for short landscape screens, prompts name the on-screen button to tap instead of a keyboard key, and the map supports pinch zoom.
+- **Phones and tablets**: a floating joystick on the left, drag on the right to look, and on-screen buttons to shoot, aim, jump and enter vehicles (play in landscape).
+
+### Content
+- **9-chapter story**: homecoming, debt collection, a car theft, a harbour ambush, an armoured-truck heist and a bank job, then out into the wider island: an arms deal in the desert, stealing a helicopter from the airport and flying it to Mirror Lake, and a final chase along the North Ridge highway after the gang boss "White Python".
+- **1–5 level heat system**: pursuit cars that ram you, officers who get out and surround you, SWAT vans, and a police helicopter with a searchlight that you can shoot down. Break line of sight and leave the search zone to escape. At 1–2 stars, officers try to arrest you if you are unarmed; you then respawn at the police station after paying a fine and losing half your ammo. If you hold a weapon or have just fired, they shoot instead.
+- **Side activities**: 5 races including a ring-highway race and a runway drag race (gold/silver/bronze), courier delivery jobs, 9 stunt jumps, 30 hidden cassette tapes, convenience-store robberies, and armoured trucks that appear at random.
+- **Shops**: gun store (8 weapons, ammo, body armour), Han's Garage (repair; a respray clears heat) and a safehouse (save, sleep).
+- **Living world**: pedestrians who cross the street, people chatting on the pavement or walking with a phone at their ear, lane-following traffic on every road (faster on highways) and cars parked at the kerb, civilians who flee from gunfire, and visitors around the town, airport, beach and lake. Distant people and cars switch to lightweight models, so the streets can be busy without slowing the game down.
+- **Cinematic presentation**: the title screen cuts between golden-hour shots of downtown, a boulevard, the beach pier, the container port and the skyline from the hills. Story missions open with letterbox bars and end with a results card (reward, time, story progress).
+- **UI**: a rotating radar with island-wide GPS routing, a full map you can zoom, drag and click to set a waypoint, a weapon wheel, progress stats and saving (with an autosave every 2 minutes while free-roaming).
+- **Audio**: guns, engines, sirens and ambience synthesised with Web Audio, plus two in-car radio stations.
+
+## Controls
+
+| Key | Action |
+| --- | --- |
+| `WASD` | Move / drive |
+| Mouse | Look |
+| LMB / RMB | Shoot / aim |
+| `Shift` | Sprint |
+| `Space` | Jump / handbrake / helicopter climb |
+| `Shift` / `Ctrl` (helicopter) | Descend |
+| `F` | Enter, exit or hijack a vehicle |
+| `E` | Interact (shops, missions, races, deliveries) |
+| `R` | Reload |
+| `Tab` (hold) | Weapon wheel (slow motion) |
+| `1`–`8` / wheel | Switch weapon |
+| `Q` | Adrenaline slow motion |
+| `M` | Map (click to set a waypoint) |
+| `V` | Change camera distance |
+| `H` | Horn / police siren |
+| `B` | Change radio station |
+| `Esc` | Pause and settings |
+
+## Quick start
 
 ```bash
 git clone https://github.com/richie7p/los-santos-lite.git
@@ -28,8 +75,8 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:8080](http://localhost:8080) in your browser.
+Open <http://localhost:8080>. Run `npm test` for the automated tests; `npm run build` type-checks, tests and bundles into `dist/`. A desktop browser with mouse and keyboard works best. If the game stutters, lower the graphics quality in the pause menu.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+MIT License. See [LICENSE](LICENSE). This is an original work; its city, characters and brands are fictional.
