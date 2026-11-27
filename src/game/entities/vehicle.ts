@@ -126,6 +126,17 @@ export class Vehicle {
     this.syncRig(0);
   }
 
+  private lodOn = false;
+  /** Swap to the two-draw-call far LOD (cars only). */
+  setLod(on: boolean) {
+    const r = this.rig;
+    if (on === this.lodOn || !r.lod) return;
+    this.lodOn = on;
+    r.lod.visible = on;
+    r.body.visible = !on;
+    for (const w of r.wheels) w.pivot.visible = !on;
+  }
+
   repaint(color: number) {
     this.color = color;
     this.rig.paint.color.setHex(color);

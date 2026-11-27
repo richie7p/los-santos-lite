@@ -195,6 +195,9 @@ export interface FacadeSet {
   /** World meters covered by one texture tile (u, v). */
   tileW: number;
   tileH: number;
+  /** Window bays per tile. */
+  cols: number;
+  rows: number;
 }
 
 interface FacadeSpec {
@@ -566,7 +569,7 @@ export function makeFacade(style: FacadeStyle, seed: number): FacadeSet {
     h[i] = (1 - glass) * 1.0 + lum * 0.12;
   }
   const normal = normalFromHeight(h, S, style === 'glass' ? 2.5 : 4);
-  return { map, emissive, orm, normal, tileW: spec.tileW, tileH: spec.tileH };
+  return { map, emissive, orm, normal, tileW: spec.tileW, tileH: spec.tileH, cols: spec.cols, rows: spec.rows };
 }
 
 /** Tangent-space normal map from a tiling height field (Sobel). */

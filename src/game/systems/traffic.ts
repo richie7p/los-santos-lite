@@ -121,13 +121,40 @@ export class Traffic {
     }
   }
 
-  private spawnTraffic() {
+  private spawnTraffic(force = false) {
     const type: VehicleType = Math.random() < 0.05 ? 'police' : pick(CIVILIAN_TYPES);
-    this.spawnOnLane(type, 90, 240);
+    return force ? this.spawnOnLane(type, 22, 200, undefined, undefined, true) : this.spawnOnLane(type, 55, 220);
+  }
+
+  /** Park cars in the nearby spaces and put traffic on the roads right away (start, respawn, teleport). */
+  populate(limit = Infinity) {
+    const g = this.g;
+    const px = g.focus.x;
+    const pz = g.focus.z;
+    let added = 0;
+    for (let i = 0; i < this.slots.length && added < limit; i++) {
+      const s = this.slots[i];
+      if (s.vehicle || s.type) continue;
+      const d = Math.abs(s.x - px) + Math.abs(s.z - pz);
+      if (d > 170 || Math.hypot(s.x - g.player.x, s.z - g.player.z) < 7) continue;
+      if (g.vehicles.some((o) => Math.abs(o.x - s.x) + Math.abs(o.z - s.z) < 7)) continue;
+      const v = g.spawnVehicle(pick(CIVILIAN_TYPES), s.x, s.z, s.yaw);
+      v.ai.kind = 'parked';
+      v.parkedSlot = i;
+      s.vehicle = v;
+      added++;
+    }
+    let count = 0;
+    for (const v of g.vehicles) if (v.ai.kind === 'traffic') count++;
+    for (let k = 0; k < this.maxCars * 2 && count < this.maxCars && added < limit * 2; k++)
+      if (this.spawnTraffic(true)) {
+        count++;
+        added++;
+      }
   }
 
   /** Spawn an AI-driven car on a random lane within a distance band from the focus. */
-  spawnOnLane(type: VehicleType, minD: number, maxD: number, cx = this.g.focus.x, cz = this.g.focus.z): Vehicle | null {
+  spawnOnLane(type: VehicleType, minD: number, maxD: number, cx = this.g.focus.x, cz = this.g.focus.z, anywhere = false): Vehicle | null {
     const g = this.g;
     const cam = g.camera;
     const near = ROAD_NODES.filter((n) => Math.abs(n.x - cx) < maxD + 170 && Math.abs(n.z - cz) < maxD + 170);
@@ -151,7 +178,7 @@ export class Traffic {
       const vx = x - cam.position.x;
       const vz = z - cam.position.z;
       const dot = (vx * Math.sin(g.camYaw) + vz * Math.cos(g.camYaw)) / (Math.hypot(vx, vz) || 1);
-      if (d < 160 && dot > 0.5 && g.phase !== 'title') continue;
+      if (!anywhere && d < 160 && dot > 0.5 && g.phase !== 'title') continue;
       let clear = true;
       for (const o of g.vehicles) if (Math.abs(o.x - x) + Math.abs(o.z - z) < 14) clear = false;
       if (!clear) continue;

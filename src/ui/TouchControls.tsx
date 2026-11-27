@@ -4,6 +4,8 @@ import { useHud } from '../game/state';
 
 const STICK_R = 56;
 const LOOK_GAIN = 1.35;
+/** The dashed "drag here to move" ghost is only shown until the player has used the stick once. */
+let stickLearned = false;
 
 /** On-screen controls for phones and tablets: floating joystick, drag-to-look and action buttons. */
 export function TouchControls({ game }: { game: Game }) {
@@ -34,6 +36,7 @@ export function TouchControls({ game }: { game: Game }) {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     if (left && stickId.current === null) {
       stickId.current = e.pointerId;
+      stickLearned = true;
       setStick({ ox: e.clientX, oy: e.clientY, x: 0, y: 0 });
     } else if (lookId.current === null) {
       lookId.current = e.pointerId;
@@ -123,7 +126,7 @@ export function TouchControls({ game }: { game: Game }) {
             style={{ width: 48, height: 48, left: STICK_R - 24 + stick.x, top: STICK_R - 24 + stick.y }}
           />
         </div>
-      ) : (
+      ) : stickLearned ? null : (
         <div className="pointer-events-none absolute bottom-[34%] left-[10%] text-center text-[11px] font-semibold text-white/45">
           <div className="mx-auto mb-1 h-16 w-16 rounded-full border-2 border-dashed border-white/25" />
           左側拖曳移動

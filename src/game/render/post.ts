@@ -18,6 +18,7 @@ const GradeShader = {
     uSlowmo: { value: 0 },
     uTime: { value: 0 },
     uWarm: { value: 0.0 },
+    uFade: { value: 1.0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -25,7 +26,7 @@ const GradeShader = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uVignette, uSaturation, uContrast, uDamage, uSlowmo, uTime, uWarm;
+    uniform float uVignette, uSaturation, uContrast, uDamage, uSlowmo, uTime, uWarm, uFade;
     varying vec2 vUv;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
     void main() {
@@ -51,7 +52,7 @@ const GradeShader = {
       col = mix(col, vec3(0.55, 0.0, 0.0), uDamage * smoothstep(0.3, 0.75, d) * 0.85);
       // film grain
       col += (hash(uv * 900.0 + uTime) - 0.5) * 0.025;
-      gl_FragColor = vec4(col, 1.0);
+      gl_FragColor = vec4(col * uFade, 1.0);
     }
   `,
 };
@@ -64,6 +65,8 @@ export class PostFX {
   /** Ground-truth ambient occlusion (contact shadows); high quality only. */
   gtao: GTAOPass;
   enabled = true;
+  /** Objects the AO pass must ignore (sky dome, cloud layer, sea): GTAOPass only skips points and lines. */
+  readonly noAO: THREE.Object3D[] = [];
 
   constructor(
     private renderer: THREE.WebGLRenderer,
@@ -80,6 +83,12 @@ export class PostFX {
     this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
     this.gtao.blendIntensity = 0.9;
     this.gtao.enabled = false;
+    const hooks = this.gtao as unknown as { _overrideVisibility: () => void };
+    const hide = hooks._overrideVisibility.bind(this.gtao);
+    hooks._overrideVisibility = () => {
+      hide(); // caches every object's visibility first, so the restore brings these back too
+      for (const o of this.noAO) o.visible = false;
+    };
     this.composer.addPass(this.gtao);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.5, 0.93);
     this.composer.addPass(this.bloom);

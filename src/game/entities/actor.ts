@@ -9,7 +9,7 @@ import type { Vehicle } from './vehicle';
 
 export type Team = 'player' | 'civilian' | 'police' | 'gang' | 'enemy' | 'ally';
 
-export type AIMode = 'wander' | 'cross' | 'flee' | 'cower' | 'chase' | 'attack' | 'guard' | 'idle' | 'follow' | 'drive' | 'handsUp' | 'roam';
+export type AIMode = 'wander' | 'cross' | 'flee' | 'cower' | 'chase' | 'attack' | 'guard' | 'idle' | 'follow' | 'drive' | 'handsUp' | 'roam' | 'chat';
 
 export interface AIState {
   mode: AIMode;

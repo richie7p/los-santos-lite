@@ -228,6 +228,8 @@ export function playerOutfit(): Outfit {
 }
 
 export type Pose = 'idle' | 'move' | 'aim' | 'dead' | 'handsUp' | 'cower' | 'fall';
+/** Arm overlay for ambient life: talking on the phone or gesturing in a conversation. */
+export type Gesture = 'none' | 'phone' | 'talk';
 
 export class CharacterRig {
   readonly root = new THREE.Group();
@@ -256,6 +258,12 @@ export class CharacterRig {
   private lean = 0;
   private aimBlend = 0;
   private fallDir = 1;
+  /** Ambient arm gesture (pedestrians). */
+  gesture: Gesture = 'none';
+  /** Far LOD: one merged mesh instead of ~12 bone meshes, no bone animation. */
+  private lodMesh: THREE.Mesh | null = null;
+  private lodOn = false;
+  private idleT = Math.random() * 20;
 
   private body: BodyGeometry;
 
@@ -307,6 +315,50 @@ export class CharacterRig {
     const me = new THREE.Mesh(g, m);
     me.castShadow = shadow;
     return me;
+  }
+
+  /** Switch between the full rig and the single-mesh far LOD. */
+  setLod(on: boolean) {
+    if (on === this.lodOn) return;
+    this.lodOn = on;
+    if (on && !this.lodMesh) this.lodMesh = this.buildLod();
+    this.pose.visible = !on;
+    if (this.lodMesh) this.lodMesh.visible = on;
+  }
+
+  /** Merge every body part in a neutral standing pose into one vertex-coloured mesh. */
+  private buildLod() {
+    const groups = [this.pose, this.hips, this.spine, this.neck, this.head, this.shL, this.shR, this.elL, this.elR, this.hipL, this.hipR, this.knL, this.knR];
+    const saved = groups.map((g) => [g.rotation.clone(), g.position.clone()] as const);
+    for (const g of groups) g.rotation.set(0, 0, 0);
+    this.pose.position.set(0, 0, 0);
+    this.hips.position.y = 0.98;
+    this.shL.rotation.z = 0.1;
+    this.shR.rotation.z = -0.1;
+    this.root.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
+    const parts: THREE.BufferGeometry[] = [];
+    this.pose.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || m === this.weaponMesh || !m.geometry.attributes.color) return;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', m.geometry.attributes.position.clone());
+      g.setAttribute('normal', m.geometry.attributes.normal.clone());
+      g.setAttribute('color', m.geometry.attributes.color.clone());
+      g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+      parts.push(g);
+    });
+    groups.forEach((g, i) => {
+      g.rotation.copy(saved[i][0]);
+      g.position.copy(saved[i][1]);
+    });
+    const merged = mergeGeometries(parts)!;
+    parts.forEach((g) => g.dispose());
+    merged.computeBoundingSphere();
+    const mesh = new THREE.Mesh(merged, bodyMat);
+    mesh.castShadow = false;
+    this.root.add(mesh);
+    return mesh;
   }
 
   setWeapon(w: WeaponId) {
@@ -381,10 +433,22 @@ export class CharacterRig {
       return;
     }
     this.deadT = 0;
+    if (this.lodOn) {
+      // far away: just bob along, no bones
+      const mv = speed > 0.25;
+      this.phase += dt * (mv ? 3.2 + speed * 1.15 : 0);
+      if (this.lodMesh) this.lodMesh.position.y = mv ? -Math.abs(Math.cos(this.phase)) * 0.035 : 0;
+      return;
+    }
     this.pose.rotation.x = lerp(this.pose.rotation.x, 0, k);
     this.pose.position.set(0, 0, 0);
 
     const moving = speed > 0.25;
+    this.idleT += dt;
+    // breathing and a slow weight shift while standing
+    const idle = !moving && pose === 'idle';
+    const breath = Math.sin(this.idleT * 1.7);
+    const sway = Math.sin(this.idleT * 0.45);
     const run = clamp(speed / 6, 0, 1.4);
     const stride = sprint ? 1.25 : 1;
     this.phase += dt * (moving ? 3.2 + speed * 1.15 : 0);
@@ -398,23 +462,52 @@ export class CharacterRig {
     this.hipR.rotation.x = lerp(this.hipR.rotation.x, -legSwing, k);
     this.knL.rotation.x = lerp(this.knL.rotation.x, moving ? Math.max(0, -c) * amp * 1.4 + 0.08 : 0.04, k);
     this.knR.rotation.x = lerp(this.knR.rotation.x, moving ? Math.max(0, c) * amp * 1.4 + 0.08 : 0.04, k);
-    this.hips.position.y = 0.98 - (moving ? Math.abs(c) * 0.035 * (0.5 + run) : 0) - (pose === 'cower' ? 0.35 : 0);
+    this.hips.position.y = 0.98 - (moving ? Math.abs(c) * 0.035 * (0.5 + run) : 0) - (pose === 'cower' ? 0.35 : 0) + (idle ? breath * 0.004 : 0);
+    this.hips.position.x = idle ? sway * 0.025 : 0;
+    this.hips.rotation.z = idle ? -sway * 0.03 : 0;
+    if (idle) {
+      // weight on one leg: the other knee relaxes
+      this.knL.rotation.x = lerp(this.knL.rotation.x, 0.04 + Math.max(0, sway) * 0.12, k);
+      this.knR.rotation.x = lerp(this.knR.rotation.x, 0.04 + Math.max(0, -sway) * 0.12, k);
+    }
     // torso lean
     this.lean = lerp(this.lean, moving && !aiming ? run * 0.2 : 0, k);
-    this.spine.rotation.x = this.lean - ab * aimPitch * 0.35;
+    this.spine.rotation.x = this.lean - ab * aimPitch * 0.35 + (idle ? breath * 0.012 : 0);
     this.spine.rotation.y = moving ? s * 0.08 * (1 - ab) : 0;
     this.hips.rotation.y = moving ? -s * 0.06 * (1 - ab) : 0;
-    this.neck.rotation.x = -ab * aimPitch * 0.3;
+    this.neck.rotation.x = -ab * aimPitch * 0.3 + (moving ? c * 0.025 : 0);
+    // idle: glance around now and then
+    const look = idle ? Math.sin(this.idleT * 0.31) * Math.max(0, Math.sin(this.idleT * 0.13)) * 0.5 : 0;
+    this.neck.rotation.y = lerp(this.neck.rotation.y, look, damp(3, dt));
 
     // arms
-    let lx = moving ? -s * amp * 0.9 : 0.05;
-    let rx = moving ? s * amp * 0.9 : 0.05;
-    let lz = 0.08;
-    let rz = -0.08;
-    let lel = moving ? -0.3 - run * 0.6 : -0.1;
-    let rel = moving ? -0.3 - run * 0.6 : -0.1;
+    let lx = moving ? -s * amp * 0.9 : 0.05 + breath * 0.015;
+    let rx = moving ? s * amp * 0.9 : 0.05 + breath * 0.015;
+    let lz = moving ? 0.08 : 0.13;
+    let rz = moving ? -0.08 : -0.13;
+    let lel = moving ? -0.3 - run * 0.6 : -0.22;
+    let rel = moving ? -0.3 - run * 0.6 : -0.22;
     let ly = 0;
     let ry = 0;
+    if (ab < 0.01 && (pose === 'idle' || pose === 'move')) {
+      if (this.gesture === 'phone') {
+        // right hand held at the ear
+        rx = -0.55;
+        rz = -0.35;
+        ry = 0.45;
+        rel = -2.35;
+      } else if (this.gesture === 'talk' && !moving) {
+        // hands animate the conversation
+        const g1 = Math.sin(this.idleT * 2.3);
+        const g2 = Math.sin(this.idleT * 1.7 + 1.3);
+        rx = -0.35 - Math.max(0, g1) * 0.5;
+        rel = -1.1 - g2 * 0.35;
+        rz = -0.2;
+        lx = -0.2 - Math.max(0, g2) * 0.35;
+        lel = -0.9 + g1 * 0.25;
+        lz = 0.18;
+      }
+    }
 
     if (pose === 'handsUp') {
       lx = -2.9;
@@ -493,6 +586,7 @@ export class CharacterRig {
 
   dispose() {
     this.root.removeFromParent();
+    this.lodMesh?.geometry.dispose();
     const b = this.body;
     for (const g of [b.pelvis, b.torso, b.neck, b.head, b.upperArmL, b.upperArmR, b.foreArmL, b.foreArmR, b.thigh, b.shin]) g.dispose();
   }

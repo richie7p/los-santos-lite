@@ -11,6 +11,7 @@ import { Vehicle, type VehicleEvents } from './entities/vehicle';
 import { Environment } from './render/environment';
 import { FX } from './render/fx';
 import { Grass } from './render/grass';
+import { HeadlightBeams } from './render/headlights';
 import { PostFX } from './render/post';
 import { AudioEngine } from './systems/audio';
 import { Combat } from './systems/combat';
@@ -59,6 +60,7 @@ export class Game {
   post!: PostFX;
   fx!: FX;
   grass!: Grass;
+  beams!: HeadlightBeams;
   readonly audio = new AudioEngine();
   readonly input: Input;
   actors: Actor[] = [];
@@ -122,7 +124,6 @@ export class Game {
   private animId = 0;
   private lastT = 0;
   private disposed = false;
-  private attract = 0;
   private fpsAcc = 0;
   private fpsN = 0;
   private fps = 0;
@@ -205,6 +206,7 @@ export class Game {
     this.world3d = buildWorld(this.scene, this.world, this.renderer.capabilities.getMaxAnisotropy());
     this.fx = new FX(this.scene);
     this.grass = new Grass(this.scene, this.world);
+    this.beams = new HeadlightBeams(this.scene);
     this.combat = new Combat(this);
     this.traffic = new Traffic(this);
     this.npcs = new NPCs(this);
@@ -227,6 +229,7 @@ export class Game {
     const w = Math.max(1, this.container.clientWidth);
     const h = Math.max(1, this.container.clientHeight);
     this.post = new PostFX(this.renderer, this.scene, this.camera, w, h, s.quality === 'high');
+    this.post.noAO.push(this.env.sky, this.env.clouds, this.env.flare, this.world3d.water);
     this.applyQuality(s.quality);
     this.onResize();
     window.addEventListener('resize', this.onResize);
@@ -237,13 +240,15 @@ export class Game {
     this.focus.set(this.player.x, this.player.y, this.player.z);
     this.camFollow.copy(this.focus);
     // pre-populate ambient life around the start
-    for (let i = 0; i < 40; i++) this.npcs.update(0.016);
+    this.npcs.populate();
+    for (let i = 0; i < 4; i++) this.npcs.update(0.016);
     for (let i = 0; i < 8; i++) this.traffic.update(0.3);
 
     // compile every shader behind the loading screen so the first frames don't hitch
     this.phase = 'loading';
     useHud.getState().set({ hasSave: this.hasSave(), phase: 'loading', loadingText: '正在準備畫面效果…' });
     this.camera.position.set(240, 95, 0);
+    this.env.hour = 17.1; // the title sequence plays at golden hour
     this.camera.lookAt(0, 20, 0);
     const done = () => {
       if (this.disposed || this.phase !== 'loading') return;
@@ -266,6 +271,7 @@ export class Game {
   /** Render-scale steps the auto quality can fall back to (multiplies the preset's pixel ratio). */
   private static readonly SCALES = [1, 0.85, 0.72, 0.6];
   private scaleLevel = 0;
+  private lowFpsStreak = 0;
   private baseRatio = 1;
   private perfAcc = 0;
   private perfFrames = 0;
@@ -295,6 +301,14 @@ export class Game {
       this.scaleLevel++;
       this.applyScale();
       this.perfCool = 3;
+    } else if (fps < 26 && this.scaleLevel === Game.SCALES.length - 1) {
+      // still struggling at the lowest render scale: drop to the next lighter preset
+      if (++this.lowFpsStreak >= 2 && s.quality !== 'low') {
+        const next: Quality = s.quality === 'high' ? 'medium' : 'low';
+        this.updateSettings({ quality: next });
+        this.toast(`畫面較卡，已自動調整為${next === 'medium' ? '中' : '低'}畫質`, 'info');
+        this.perfCool = 4;
+      }
     } else if (fps > 58 && this.scaleLevel > 0) {
       this.scaleLevel--;
       this.applyScale();
@@ -319,13 +333,23 @@ export class Game {
       this.clearSave();
       this.env.hour = 9.5;
       this.missions.startStory();
-      const tips: [number, string][] = [
-        [7000, '提示：按 [F] 上車或下車，按住空白鍵甩尾'],
-        [13000, '提示：按 [M] 開啟地圖，點擊即可設定 GPS 導航點'],
-        [19000, '提示：按住 [Tab] 開啟武器輪盤，按 [Q] 進入子彈時間'],
-      ];
+      const tips: [number, string][] = this.input.touch
+        ? [
+            [7000, '提示：點 [上車] 上車或下車，開車時按住 [手煞車] 甩尾'],
+            [13000, '提示：點上方 [地圖] 開啟地圖，點擊地圖即可設定 GPS 導航點'],
+            [19000, '提示：點 [武器] 切換武器，點 [專注] 進入子彈時間'],
+          ]
+        : [
+            [7000, '提示：按 [F] 上車或下車，按住空白鍵甩尾'],
+            [13000, '提示：按 [M] 開啟地圖，點擊即可設定 GPS 導航點'],
+            [19000, '提示：按住 [Tab] 開啟武器輪盤，按 [Q] 進入子彈時間'],
+          ];
       for (const [ms, text] of tips) setTimeout(() => !this.disposed && this.toast(text, 'info'), ms);
     }
+    // the streets are already busy when the camera fades in
+    this.focus.set(this.player.x, this.player.y, this.player.z);
+    this.npcs.populate();
+    this.traffic.populate();
     this.setPhase('playing');
     this.input.requestLock();
     this.camYaw = this.player.yaw;
@@ -336,6 +360,16 @@ export class Game {
         .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> })?.lock?.('landscape'))
         .catch(() => {});
     }
+  }
+
+  /**
+   * Key hint for prompts and objectives: "按 [F]" with a keyboard, "點 [上車]" on touch screens
+   * (the label of the on-screen button that does the same thing).
+   */
+  hint(key: 'F' | 'E' | 'M' | 'B' | 'Q' | 'Tab' | 'Shift' | 'Space' | 'R', touchLabel?: string) {
+    if (!this.input.touch) return `按 [${key === 'Space' ? '空白鍵' : key}]`;
+    const labels: Record<string, string> = { F: this.player?.vehicle ? '下車' : '上車', E: '互動', M: '地圖', B: '電台', Q: '專注', Tab: '武器', Shift: '下降', Space: this.player?.vehicle ? '手煞車' : '跳躍', R: '換彈' };
+    return `點 [${touchLabel ?? labels[key]}]`;
   }
 
   setPhase(p: HudState['phase']) {
@@ -395,19 +429,34 @@ export class Game {
 
   applyQuality(q: Quality) {
     const dpr = window.devicePixelRatio || 1;
-    const ratio = q === 'low' ? Math.min(dpr, 1) * 0.75 : q === 'medium' ? Math.min(dpr, 1.25) : Math.min(dpr, 1.75);
+    const touch = this.input.touch;
+    // phones have small CSS viewports but dense screens: render closer to native so the image stays crisp
+    const ratio = touch
+      ? q === 'low'
+        ? Math.min(dpr, 1.25)
+        : q === 'medium'
+          ? Math.min(dpr, 1.5)
+          : Math.min(dpr, 2)
+      : q === 'low'
+        ? Math.min(dpr, 1) * 0.75
+        : q === 'medium'
+          ? Math.min(dpr, 1.25)
+          : Math.min(dpr, 1.75);
     this.baseRatio = ratio;
     this.scaleLevel = 0;
+    this.lowFpsStreak = 0;
     this.renderer.setPixelRatio(ratio);
     this.renderer.shadowMap.enabled = q !== 'low';
-    this.env.setShadowQuality(q === 'high' ? 4096 : 2048, q !== 'low', q === 'high' ? 130 : 95);
+    this.env.setShadowQuality(q === 'high' ? 4096 : touch ? 1024 : 2048, q !== 'low', q === 'high' ? 130 : touch ? 70 : 95);
     this.post.enabled = q !== 'low';
     this.post.gtao.enabled = q === 'high';
     this.grass.enabled = q !== 'low';
+    this.grass.density = touch ? 0.5 : 1;
     this.env.flareEnabled = q !== 'low';
     if (this.post.smaa) this.post.smaa.enabled = q === 'high';
-    this.traffic.maxCars = q === 'low' ? 14 : q === 'medium' ? 18 : 24;
-    this.npcs.maxPeds = q === 'low' ? 20 : q === 'medium' ? 28 : 36;
+    this.traffic.maxCars = touch ? (q === 'low' ? 12 : q === 'medium' ? 16 : 20) : q === 'low' ? 16 : q === 'medium' ? 22 : 28;
+    // far people and cars are single-mesh LODs, so the streets can be busier
+    this.npcs.maxPeds = touch ? (q === 'low' ? 28 : q === 'medium' ? 36 : 44) : q === 'low' ? 36 : q === 'medium' ? 52 : 64;
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.material) {
@@ -527,12 +576,23 @@ export class Game {
       if (!this.disposed) this.hud({ toasts: this.toasts });
     }, 4200);
   }
-  big(title: string, sub?: string, color?: string) {
+  private letterboxTimer = 0;
+  /** Letterbox bars for a few seconds (mission intros). */
+  cinematic(seconds: number) {
+    this.hud({ letterbox: true });
+    window.clearTimeout(this.letterboxTimer);
+    this.letterboxTimer = window.setTimeout(() => !this.disposed && this.hud({ letterbox: false }), seconds * 1000);
+  }
+
+  big(title: string, sub?: string, color?: string, rows?: [string, string][]) {
     const id = this.bigId++;
-    this.hud({ big: { title, sub, color, id } });
-    setTimeout(() => {
-      if (!this.disposed && useHud.getState().big?.id === id) this.hud({ big: null });
-    }, 3800);
+    this.hud({ big: { title, sub, color, id, rows } });
+    setTimeout(
+      () => {
+        if (!this.disposed && useHud.getState().big?.id === id) this.hud({ big: null });
+      },
+      rows ? 6000 : 3800,
+    );
   }
   setSubtitle(text: string | null, seconds = 3) {
     this.subtitle = text;
@@ -724,6 +784,9 @@ export class Game {
     this.setPhase('playing');
     this.input.requestLock();
     this.env.hour = (this.env.hour + 4) % 24;
+    this.focus.set(p.x, p.y, p.z);
+    this.npcs.populate();
+    this.traffic.populate();
   }
 
   // ================================================================ vehicles
@@ -857,23 +920,70 @@ export class Game {
     this.input.endFrame();
   };
 
+  // ================================================================ title cinematics
+  /** Camera shots for the title screen: [from, to, look-from, look-to] (y above ground), duration. */
+  private static readonly SHOTS: { from: number[]; to: number[]; look: number[]; lookTo: number[]; dur: number; orbit?: boolean }[] = [
+    { from: [0, 95, 240], to: [0, 95, 240], look: [0, 20, 0], lookTo: [0, 20, 0], dur: 12, orbit: true },
+    { from: [-175, 6, 3.5], to: [-95, 8, 3.5], look: [60, 12, -2], lookTo: [80, 14, -2], dur: 10 },
+    { from: [-8, 9, 432], to: [-30, 12, 448], look: [60, 20, 560], lookTo: [62, 23, 560], dur: 10 },
+    { from: [500, 30, -250], to: [522, 40, -60], look: [590, 18, -40], lookTo: [600, 18, 40], dur: 10 },
+    { from: [-260, 60, -470], to: [-170, 70, -455], look: [0, 30, 0], lookTo: [20, 30, 10], dur: 11 },
+  ];
+  private titleIdx = -1;
+  private titleT = 0;
+  private titleAngle = 0;
+  private readonly tmpLook = new THREE.Vector3();
+
+  private titleDirector(dt: number) {
+    const shots = Game.SHOTS;
+    this.titleT += dt;
+    if (this.titleIdx < 0 || this.titleT > shots[this.titleIdx].dur) {
+      this.titleIdx = (this.titleIdx + 1) % shots.length;
+      this.titleT = 0;
+      // keep the title at golden hour / early evening
+      if (this.titleIdx === 0 && (this.env.hour > 19.6 || this.env.hour < 16)) this.env.hour = 17.1;
+      const sh = shots[this.titleIdx];
+      this.focus.set((sh.from[0] + sh.look[0]) / 2, 0, (sh.from[2] + sh.look[2]) / 2);
+      // a few at a time: building characters and cars during the fade must not hitch
+      this.npcs.populate(14);
+      this.traffic.populate(10);
+    }
+    const sh = shots[this.titleIdx];
+    const u = this.titleT / sh.dur;
+    const e = u * u * (3 - 2 * u) * 0.6 + u * 0.4; // gentle ease, never fully stops
+    if (sh.orbit) {
+      this.titleAngle += dt * 0.05;
+      const r = Math.hypot(sh.from[0], sh.from[2]);
+      this.camera.position.set(Math.sin(this.titleAngle) * r, sh.from[1], Math.cos(this.titleAngle) * r);
+      this.tmpLook.set(sh.look[0], sh.look[1], sh.look[2]);
+    } else {
+      const x = lerp(sh.from[0], sh.to[0], e);
+      const z = lerp(sh.from[2], sh.to[2], e);
+      this.camera.position.set(x, groundHeight(x, z) + lerp(sh.from[1], sh.to[1], e), z);
+      this.tmpLook.set(lerp(sh.look[0], sh.lookTo[0], e), lerp(sh.look[1], sh.lookTo[1], e), lerp(sh.look[2], sh.lookTo[2], e));
+    }
+    this.camera.lookAt(this.tmpLook);
+    // fade through black between shots (post-processing presets)
+    this.post.grade.uniforms.uFade.value = Math.min(1, this.titleT / 0.9, (sh.dur - this.titleT) / 0.7);
+  }
+
   private frame(rawDt: number) {
     const ph = this.phase;
     if (ph === 'loading') return;
     if (ph === 'title') {
-      this.attract += rawDt * 0.05;
+      this.titleDirector(rawDt);
       this.env.update(rawDt * 0.5, this.focus);
       this.world3d.update(rawDt, performance.now() / 1000);
       this.world3d.setNight(this.env.night);
-      const r = 240;
-      this.camera.position.set(Math.sin(this.attract) * r, 95, Math.cos(this.attract) * r);
-      this.camera.lookAt(0, 20, 0);
-      this.focus.set(this.camera.position.x * 0.3, 0, this.camera.position.z * 0.3);
       this.traffic.update(rawDt);
       for (const v of this.vehicles) v.update(rawDt, this.world, this.vehicleEvents);
+      this.vehicleCollisions(rawDt);
+      this.npcs.update(rawDt);
+      this.fx.update(rawDt);
       this.post.render(rawDt, this.scene, this.camera);
       return;
     }
+    this.post.grade.uniforms.uFade.value = 1;
     const frozen = ph === 'paused' || ph === 'shop' || ph === 'map';
     if (frozen) {
       this.map.draw(rawDt);
@@ -904,9 +1014,12 @@ export class Game {
     this.updatePlayer(dt);
     // vehicles
     this.traffic.update(dt);
+    const cam = this.camera.position;
+    const lodD2 = (this.input.touch ? 70 : 95) ** 2;
     for (const v of this.vehicles) {
       if (v.isPlayer || v.ai.kind !== 'parked' || v.speed > 0.05 || v.airborne) v.update(dt, this.world, this.vehicleEvents);
       if (v.isPlayer) v.headlightsOn = this.env.night > 0.35;
+      v.setLod(!v.isPlayer && !v.destroyed && (v.x - cam.x) ** 2 + (v.z - cam.z) ** 2 > lodD2);
     }
     this.vehicleCollisions(dt);
     this.npcs.update(dt);
@@ -951,6 +1064,7 @@ export class Game {
     this.fx.update(dt);
     this.grass.update(this.camera.position, performance.now() / 1000);
     this.updateHeadlight();
+    this.beams.update(this.vehicles, this.camera.position, this.env.night, this.wetness);
     this.updateCamera(rawDt);
     this.updateAudio();
     this.map.draw(rawDt);
@@ -1522,9 +1636,9 @@ export class Game {
       prompt = this.missions.interactPrompt();
       if (!prompt && !v) {
         const nv = this.nearestEnterable();
-        if (nv) prompt = nv.crewCount > 0 ? `按 [F] 劫持【${nv.spec.name}】` : `按 [F] 駕駛【${nv.spec.name}】`;
+        if (nv) prompt = nv.crewCount > 0 ? `${this.hint('F')} 劫持【${nv.spec.name}】` : `${this.hint('F')} 駕駛【${nv.spec.name}】`;
       }
-      if (!prompt && v && v.speed < 1) prompt = '按 [F] 下車　[B] 切換電台';
+      if (!prompt && v && v.speed < 1) prompt = this.input.touch ? `${this.hint('F')} 下車` : '按 [F] 下車　[B] 切換電台';
     }
     // district banner
     const dKey = districtAt(this.focus.x, this.focus.z);
@@ -1785,6 +1899,9 @@ export class Game {
       teleport: (x: number, z: number) => {
         if (this.player.vehicle) this.player.vehicle.place(x, z, this.player.vehicle.yaw);
         else this.player.setPos(x, z);
+        this.focus.set(x, this.player.y, z);
+        this.npcs.populate();
+        this.traffic.populate();
       },
       key: (code: string, on: boolean) => this.input.debugSet(code, on),
       setHour: (h: number) => (this.env.hour = h),

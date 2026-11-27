@@ -8,9 +8,9 @@ const DAY_FOG = new THREE.Color(0xa9bccb);
 const DUSK_FOG = new THREE.Color(0xe2a98a);
 const NIGHT_FOG = new THREE.Color(0x0c1424);
 const DAY_HEMI_SKY = new THREE.Color(0xcfe3ff);
-const NIGHT_HEMI_SKY = new THREE.Color(0x3a4f7a);
+const NIGHT_HEMI_SKY = new THREE.Color(0x4a6090);
 const DAY_HEMI_GROUND = new THREE.Color(0x8a7f6a);
-const NIGHT_HEMI_GROUND = new THREE.Color(0x10131a);
+const NIGHT_HEMI_GROUND = new THREE.Color(0x1e1a18);
 const SUN_WARM = new THREE.Color(0xffb07a);
 const SUN_WHITE = new THREE.Color(0xfff4e6);
 const MOON = new THREE.Color(0x9fb4ff);
@@ -178,10 +178,43 @@ export class Environment {
     this.flare.addElement(new LensflareElement(t1, 40, 0.9));
     this.flare.addElement(new LensflareElement(t2, 160, 1.05));
     scene.add(this.flare);
+
+    // moon: a soft disc opposite the sun, shown at night
+    {
+      const S = 128;
+      const c = document.createElement('canvas');
+      c.width = c.height = S;
+      const ctx = c.getContext('2d')!;
+      const glow = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+      glow.addColorStop(0, 'rgba(255,255,245,1)');
+      glow.addColorStop(0.2, 'rgba(240,244,255,1)');
+      glow.addColorStop(0.24, 'rgba(200,215,255,0.35)');
+      glow.addColorStop(1, 'rgba(160,180,255,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, S, S);
+      // faint maria
+      ctx.fillStyle = 'rgba(150,160,180,0.35)';
+      for (const [x, y, r] of [
+        [0.45, 0.42, 0.05],
+        [0.55, 0.52, 0.04],
+        [0.47, 0.56, 0.03],
+      ]) {
+        ctx.beginPath();
+        ctx.arc(x * S, y * S, r * S, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      this.moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, opacity: 0 }));
+      this.moon.scale.setScalar(520);
+      this.moon.renderOrder = -2;
+      scene.add(this.moon);
+    }
   }
 
   readonly clouds: THREE.Mesh;
   readonly flare: Lensflare;
+  readonly moon!: THREE.Sprite;
   flareEnabled = true;
 
   /** Force a weather state (0 clear .. 1 storm). */
@@ -333,6 +366,10 @@ export class Environment {
 
     // main light: sun by day, moon at night
     const lightDir = this.night > 0.5 ? new THREE.Vector3(-this.sunDir.x, Math.max(0.35, -this.sunDir.y), -this.sunDir.z).normalize() : this.sunDir;
+    const moonDir = new THREE.Vector3(-this.sunDir.x, Math.max(0.22, -this.sunDir.y), -this.sunDir.z).normalize();
+    this.moon.position.copy(focus).addScaledVector(moonDir, 3600);
+    (this.moon.material as THREE.SpriteMaterial).opacity = smoothstep(0.35, 0.85, this.night) * (1 - r * 0.9);
+    this.moon.visible = this.night > 0.3;
     this.sun.position.copy(focus).addScaledVector(lightDir, 300);
     this.sun.target.position.copy(focus);
     if (this.night > 0.5) {
@@ -405,8 +442,11 @@ const CLOUD_FS = /* glsl */ `
     float lo = 1.0 - uCover;
     float c = smoothstep(lo, lo + 0.26, n);
     float thick = smoothstep(lo, 1.0, n);
-    float dist = length(vW.xz - uCam.xz);
-    float fade = 1.0 - smoothstep(2400.0, 4300.0, dist);
+    // fade by elevation seen from the camera: the layer is gone well before the far plane
+    // or the edge of the plane (otherwise a hard line shows above the horizon from up high)
+    vec3 toC = vW - cameraPosition;
+    float elev = toC.y / max(length(toC), 1.0);
+    float fade = smoothstep(0.1, 0.26, elev) * (1.0 - smoothstep(2800.0, 4300.0, length(toC.xz)));
     vec3 lit = mix(vec3(1.0), uSunCol, 0.45);
     vec3 shade = mix(vec3(0.62, 0.66, 0.74), vec3(0.36, 0.38, 0.42), uRain);
     vec3 col = mix(lit, shade, thick * 0.8);

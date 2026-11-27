@@ -71,7 +71,10 @@ export class Grass {
   private uniforms = { uTime: { value: 0 } };
   private cx = Infinity;
   private cz = Infinity;
+  private builtDensity = 1;
   enabled = true;
+  /** 0..1 share of tufts kept (phones grow half as many). */
+  density = 1;
   private m = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private p = new THREE.Vector3();
@@ -145,6 +148,10 @@ export class Grass {
     this.uniforms.uTime.value = time;
     this.mesh.visible = this.enabled;
     if (!this.enabled) return;
+    if (this.density !== this.builtDensity) {
+      this.builtDensity = this.density;
+      this.cx = Infinity;
+    }
     if (Math.hypot(cam.x - this.cx, cam.z - this.cz) < 9) return;
     this.cx = cam.x;
     this.cz = cam.z;
@@ -161,6 +168,7 @@ export class Grass {
         if (d > RADIUS) continue;
         // thin out towards the edge of the ring
         if (hash(gx, gz, 3) < (d / RADIUS) * 0.55) continue;
+        if (this.density < 1 && hash(gx, gz, 7) > this.density) continue;
         const k = this.kind(x, z);
         if (k === null) continue;
         const y = Math.abs(x) <= 367 && Math.abs(z) <= 367 ? 0.19 : terrainHeight(x, z);

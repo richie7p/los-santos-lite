@@ -20,6 +20,8 @@ export interface VehicleRig {
   passenger: THREE.Mesh;
   rotor?: THREE.Object3D;
   tailRotor?: THREE.Object3D;
+  /** Far LOD: the paint shell plus one merged, vertex-coloured mesh for everything else. */
+  lod?: THREE.Group;
 }
 
 interface Cached {
@@ -436,6 +438,48 @@ function buildCached(t: VehicleType): Cached {
   return c;
 }
 
+// ------------------------------------------------------------------ far LOD
+const lodMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.25 });
+const lodCache = new Map<VehicleType, THREE.BufferGeometry>();
+
+/** Geometry reduced to position/normal with a baked colour (optionally transformed). */
+function baked(g: THREE.BufferGeometry, color: number, m?: THREE.Matrix4) {
+  const src = g.index ? g.toNonIndexed() : g;
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', src.attributes.position.clone());
+  if (src.attributes.normal) out.setAttribute('normal', src.attributes.normal.clone());
+  else out.computeVertexNormals();
+  const n = out.attributes.position.count;
+  const arr = new Float32Array(n * 3);
+  const c = new THREE.Color(color);
+  for (let i = 0; i < n; i++) c.toArray(arr, i * 3);
+  out.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  if (m) out.applyMatrix4(m);
+  return out;
+}
+
+function lodRest(t: VehicleType, geo: Cached) {
+  let g = lodCache.get(t);
+  if (g) return g;
+  const s = VEHICLES[t];
+  const parts = [baked(geo.cabin, 0x1c2630), baked(geo.trim, 0x15171a), baked(geo.head, 0xe8e4da), baked(geo.tail, 0x7a1010)];
+  const wz = s.wheelbase / 2;
+  const wx = s.width / 2 - 0.16;
+  const tw = s.type === 'armored' ? 0.38 : 0.28;
+  for (const [x, z] of [
+    [-wx, wz],
+    [wx, wz],
+    [-wx, -wz],
+    [wx, -wz],
+  ])
+    parts.push(baked(wheelGeo, 0x1a1a1a, new THREE.Matrix4().compose(new THREE.Vector3(x, s.wheelR, z), new THREE.Quaternion(), new THREE.Vector3(tw, s.wheelR, s.wheelR))));
+  g = mergeGeometries(parts)!;
+  parts.forEach((p) => p.dispose());
+  g.computeBoundingSphere();
+  lodCache.set(t, g);
+  return g;
+}
+
 export function createVehicleRig(t: VehicleType, color: number): VehicleRig {
   if (t === 'heli') return createHeliRig(color);
   if (t === 'bike') return createBikeRig(color);
@@ -541,7 +585,11 @@ export function createVehicleRig(t: VehicleType, color: number): VehicleRig {
   const driverPlayer = figure(PLAYER_LOOK, seat.x, seat.y, seat.z);
   const passenger = figure(t === 'police' ? POLICE_LOOK : DRIVER_LOOKS[Math.floor(Math.random() * DRIVER_LOOKS.length)], -seat.x, seat.y, seat.z);
   body.add(driver, driverPlayer, passenger);
-  return { root, body, wheels, paint, brake, head, sirenR, sirenB, driverSeat: seat, driver, driverPlayer, passenger };
+  const lod = new THREE.Group();
+  lod.add(new THREE.Mesh(geo.paint, paint), new THREE.Mesh(lodRest(t, geo), lodMat));
+  lod.visible = false;
+  root.add(lod);
+  return { root, body, wheels, paint, brake, head, sirenR, sirenB, driverSeat: seat, driver, driverPlayer, passenger, lod };
 }
 
 export function disposeVehicleRig(r: VehicleRig) {

@@ -8,6 +8,23 @@ const TOUCH = isTouchDevice();
 
 const fmt = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
 
+/** Text with [key] chips: "按 [F] 上車" renders F (or a touch button name) as a key cap. */
+export function Rich({ text, chip = 'bg-amber-400 text-black' }: { text: string; chip?: string }) {
+  return (
+    <>
+      {text.split(/(\[[^\]]+\])/).map((part, i) =>
+        part.startsWith('[') && part.endsWith(']') ? (
+          <kbd key={i} className={`mx-0.5 inline-block rounded px-1.5 py-[1px] align-[1px] font-sans text-[0.82em] font-black leading-tight ${chip}`}>
+            {part.slice(1, -1)}
+          </kbd>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 function Minimap({ game }: { game: Game }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const hp = useHud((s) => s.hp);
@@ -108,7 +125,11 @@ function Objective() {
     <div className="absolute left-4 top-4 max-w-[min(420px,60vw)] select-none">
       <div className="rounded-xl bg-black/50 backdrop-blur-sm border-l-4 border-amber-400 px-4 py-2.5 shadow-lg">
         {title && <div className="text-[11px] font-bold tracking-[0.2em] text-amber-300">{title}</div>}
-        {obj && <div className="text-[15px] font-bold text-white leading-snug">{obj}</div>}
+        {obj && (
+          <div className="text-[15px] font-bold text-white leading-snug">
+            <Rich text={obj} />
+          </div>
+        )}
         {timer !== null && <div className="font-display text-2xl font-bold text-amber-200 tabular-nums">{timer.toFixed(1)}s</div>}
       </div>
     </div>
@@ -129,7 +150,7 @@ function Toasts() {
     <div className={`absolute left-4 ${obj ? 'top-[110px]' : 'top-4'} flex flex-col gap-1.5 select-none pointer-events-none`}>
       {toasts.map((t) => (
         <div key={t.id} className={`toast-in rounded-lg bg-black/60 backdrop-blur-sm border-l-4 ${colors[t.kind]} px-3 py-1.5 text-sm font-semibold text-white shadow`}>
-          {t.text}
+          <Rich text={t.text} chip="bg-white/85 text-black" />
         </div>
       ))}
     </div>
@@ -144,15 +165,7 @@ function Subtitle() {
       {sub && <div className="text-center text-[17px] font-bold text-white leading-relaxed [text-shadow:0_2px_4px_#000,0_0_12px_rgba(0,0,0,0.8)]">{sub}</div>}
       {prompt && (
         <div className="rounded-lg bg-black/65 border border-white/15 px-3 py-1.5 text-[14px] font-semibold text-white">
-          {prompt.split(/(\[[^\]]+\])/).map((part, i) =>
-            part.startsWith('[') ? (
-              <kbd key={i} className="mx-0.5 rounded bg-amber-400 px-1.5 py-0.5 text-[12px] font-black text-black">
-                {part.slice(1, -1)}
-              </kbd>
-            ) : (
-              <span key={i}>{part}</span>
-            ),
-          )}
+          <Rich text={prompt} />
         </div>
       )}
     </div>
@@ -167,8 +180,29 @@ function BigMessage() {
       <div className="font-display text-[clamp(36px,6vw,72px)] font-black tracking-wide [text-shadow:0_4px_18px_rgba(0,0,0,0.85)]" style={{ color: big.color ?? '#fff' }}>
         {big.title}
       </div>
-      {big.sub && <div className="mt-1 rounded bg-black/55 px-4 py-1 text-[15px] font-semibold text-white">{big.sub}</div>}
+      {big.sub && <div className="mt-1 max-w-[min(640px,86vw)] rounded bg-black/55 px-4 py-1 text-center text-[15px] font-semibold text-white">{big.sub}</div>}
+      {big.rows && (
+        <div className="result-in mt-3 w-[min(340px,80vw)] overflow-hidden rounded-xl border border-white/10 bg-black/60 backdrop-blur-sm">
+          {big.rows.map(([k, v], i) => (
+            <div key={k} className="result-row flex items-baseline justify-between border-b border-white/5 px-4 py-1.5" style={{ animationDelay: `${0.35 + i * 0.18}s` }}>
+              <span className="text-[13px] font-semibold text-white/65">{k}</span>
+              <span className="font-display text-xl font-bold tabular-nums text-white">{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Black bars that slide in for mission intros. */
+function Letterbox() {
+  const on = useHud((s) => s.letterbox);
+  return (
+    <>
+      <div className={`pointer-events-none absolute inset-x-0 top-0 bg-black transition-[height] duration-700 ease-out ${on ? 'h-[9vh]' : 'h-0'}`} />
+      <div className={`pointer-events-none absolute inset-x-0 bottom-0 bg-black transition-[height] duration-700 ease-out ${on ? 'h-[9vh]' : 'h-0'}`} />
+    </>
   );
 }
 
@@ -319,6 +353,7 @@ export function WeaponWheel() {
 export function HUD({ game }: { game: Game }) {
   return (
     <div className="absolute inset-0 pointer-events-none">
+      <Letterbox />
       <Crosshair />
       <Minimap game={game} />
       <TopRight />

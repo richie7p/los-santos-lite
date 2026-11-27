@@ -4,6 +4,7 @@
  * extra detail costs few draw calls.
  */
 import * as THREE from 'three';
+import { RoomKind, addInteriors } from '../render/interiors';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { StaticWorld } from '../core/collision';
 import { rng, smoothstep } from '../core/math';
@@ -115,10 +116,14 @@ function storefrontTextures(seed: number) {
   };
   const cc = mk();
   const ec = mk();
+  const gc = mk();
   const c = cc.getContext('2d')!;
   const e = ec.getContext('2d')!;
+  const gm = gc.getContext('2d')!;
   e.fillStyle = '#000';
   e.fillRect(0, 0, W, H);
+  gm.fillStyle = '#000';
+  gm.fillRect(0, 0, W, H);
   const brands = ['#d62828', '#f77f00', '#2a9d8f', '#264653', '#8338ec', '#ff006e', '#3a86ff', '#e9c46a', '#06d6a0', '#118ab2'];
   const names = ['咖啡', '便當', '藥局', '書店', '花店', '眼鏡', '服飾', '麵包', '茶飲', '電器', '理髮', '銀樓', '牙醫', '餐廳', '超市', '鞋店'];
   for (let u = 0; u < 2; u++) {
@@ -148,6 +153,11 @@ function storefrontTextures(seed: number) {
     for (let k = 0; k <= 3; k++) c.fillRect(x0 + 10 + k * ((W / 2 - 20) / 3) - 2, 70, 4, H - 80);
     c.fillStyle = '#1d262e';
     c.fillRect(x0 + W / 4 - 22, 110, 44, H - 120);
+    // glass mask for the interior shader (shop floor visible through the front, mullions stay solid)
+    gm.fillStyle = '#fff';
+    gm.fillRect(x0 + 10, 70, W / 2 - 20, H - 80);
+    gm.fillStyle = '#000';
+    for (let k = 0; k <= 3; k++) gm.fillRect(x0 + 10 + k * ((W / 2 - 20) / 3) - 3, 70, 6, H - 80);
     // interior light at night
     const g = e.createLinearGradient(0, 70, 0, H);
     g.addColorStop(0, '#fff2d0');
@@ -167,7 +177,9 @@ function storefrontTextures(seed: number) {
   const em = new THREE.CanvasTexture(ec);
   em.colorSpace = THREE.SRGBColorSpace;
   em.wrapS = THREE.RepeatWrapping;
-  return { map, em };
+  const glass = new THREE.CanvasTexture(gc);
+  glass.wrapS = THREE.RepeatWrapping;
+  return { map, em, glass };
 }
 
 function chainLinkTexture() {
@@ -207,6 +219,7 @@ function stripeTexture(a: string, b: string) {
 // ------------------------------------------------------------------ main
 export function buildDetails(ctx: DetailCtx) {
   const { root, col, lampMats, lampPositions, nightMaterials, animated } = ctx;
+  const spillMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, fog: true });
   const r = rng(9090);
   const emitters: Emitter[] = [];
   const group = new THREE.Group();
@@ -311,6 +324,7 @@ export function buildDetails(ctx: DetailCtx) {
   {
     const tex = storefrontTextures(77);
     const tex2 = storefrontTextures(91);
+    const spill: THREE.Matrix4[] = [];
     const geos: THREE.BufferGeometry[][] = [[], []];
     for (const b of BUILDINGS) {
       if (Math.abs(b.cx) > 372 || Math.abs(b.cz) > 372) continue;
@@ -338,6 +352,16 @@ export function buildDetails(ctx: DetailCtx) {
       g.clearGroups();
       g.translate(b.cx, base + H / 2, b.cz);
       geos[r() < 0.5 ? 0 : 1].push(g);
+      // warm light from the shop windows spilling onto the pavement at night
+      const hw = (b.w + 0.3) / 2;
+      const hd = (b.d + 0.3) / 2;
+      for (const [x, z, len, yaw] of [
+        [b.cx, b.cz + hd, b.w, 0],
+        [b.cx, b.cz - hd, b.w, Math.PI],
+        [b.cx + hw, b.cz, b.d, Math.PI / 2],
+        [b.cx - hw, b.cz, b.d, -Math.PI / 2],
+      ] as [number, number, number, number][])
+        spill.push(new THREE.Matrix4().compose(new THREE.Vector3(x, base + 0.035, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), new THREE.Vector3(len, 1, 1)));
       // awnings on the side facing the street
       const blk = BLOCKS.find((bl) => Math.abs(bl.cx - b.cx) < PITCH / 2 && Math.abs(bl.cz - b.cz) < PITCH / 2);
       if (blk && r() < 0.75) {
@@ -354,10 +378,34 @@ export function buildDetails(ctx: DetailCtx) {
         }
       }
     }
+    {
+      // unit quad lying on the ground, from the wall (z = 0) outwards (z = 5 m)
+      const sg = new THREE.PlaneGeometry(1, 5).rotateX(-Math.PI / 2).translate(0, 0, 2.5);
+      const c = document.createElement('canvas');
+      c.width = 4;
+      c.height = 64;
+      const sx = c.getContext('2d')!;
+      const grad = sx.createLinearGradient(0, 0, 0, 64); // canvas top = texture v 1 = the wall
+      grad.addColorStop(0, 'rgba(255,214,150,1)');
+      grad.addColorStop(0.35, 'rgba(255,200,130,0.45)');
+      grad.addColorStop(1, 'rgba(255,190,120,0)');
+      sx.fillStyle = grad;
+      sx.fillRect(0, 0, 4, 64);
+      const st = new THREE.CanvasTexture(c);
+      st.colorSpace = THREE.SRGBColorSpace;
+      spillMat.map = st;
+      const im = new THREE.InstancedMesh(sg, spillMat, spill.length);
+      spill.forEach((m, i) => im.setMatrixAt(i, m));
+      im.renderOrder = 2;
+      im.computeBoundingSphere();
+      group.add(im);
+    }
     [tex, tex2].forEach((t, i) => {
       if (!geos[i].length) return;
       const m = new THREE.MeshStandardMaterial({ map: t.map, emissive: 0xffffff, emissiveMap: t.em, emissiveIntensity: 0, roughness: 0.55, metalness: 0.1 });
       nightMaterials.push({ mat: m, max: 0.6 });
+      // two 4 m shop units per texture repeat, 4.6 m tall, deep sales floors
+      addInteriors(m, { cells: [2, 1], size: [4, 4.6], kind: RoomKind.Shop, mask: t.glass });
       const mesh = new THREE.Mesh(mergeGeometries(geos[i])!, m);
       mesh.receiveShadow = true;
       mesh.castShadow = true;
@@ -1250,7 +1298,7 @@ export function buildDetails(ctx: DetailCtx) {
   }
 
   for (const i of insts) i.build(group);
-  return { emitters };
+  return { emitters, spillMat };
 }
 
 /** Is this point on an industrial lot (not road, not sidewalk)? */

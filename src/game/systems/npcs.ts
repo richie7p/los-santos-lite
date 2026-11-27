@@ -36,9 +36,10 @@ export class NPCs {
     for (const a of g.actors) if (a.team === 'civilian' && !a.dead) civs++;
     const cap = g.env.night > 0.6 ? Math.round(this.maxPeds * 0.6) : this.maxPeds;
     if (this.spawnT <= 0 && civs < cap) {
-      this.spawnT = 0.15;
+      this.spawnT = 0.12;
       this.spawnPed();
     }
+    const lodDist = g.input.touch ? 34 : 42;
 
     for (const a of [...g.actors]) {
       if (a === g.player) continue;
@@ -52,16 +53,17 @@ export class NPCs {
       }
       if (a.vehicle) continue;
       if (a.invuln > 0) a.invuln -= dt;
-      if (!a.tag && d > (a.team === 'civilian' ? 170 : 260)) {
+      if (!a.tag && d > (a.team === 'civilian' ? 150 : 260)) {
         g.removeActor(a);
         continue;
       }
-      // LOD: no shadows from distant people
+      // LOD: no shadows from distant people, and a single merged mesh further out
       const far = d > 45;
       if (far !== a.farLod) {
         a.farLod = far;
         a.rig.root.traverse((o) => ((o as THREE.Mesh).castShadow = !far));
       }
+      a.rig.setLod(d > lodDist && a.pose !== 'aim' && a.ai.mode !== 'attack' && a.ai.mode !== 'chase');
       const hostile = a.team === 'police' || a.team === 'gang' || a.team === 'enemy';
       if (hostile && (a.ai.aggro || a.team === 'enemy' || (a.team === 'police' && g.police.heat > 0))) this.combatAI(a, dt);
       else if (a.team === 'ally') this.allyAI(a, dt);
@@ -80,7 +82,7 @@ export class NPCs {
     }
   }
 
-  private spawnPed() {
+  private spawnPed(instant = false) {
     const g = this.g;
     // people around hubs outside the grid
     for (const h of HUBS) {
@@ -108,7 +110,8 @@ export class NPCs {
     }
     for (let attempt = 0; attempt < 5; attempt++) {
       const ang = Math.random() * Math.PI * 2;
-      const r = rand(45, 130);
+      // most people close to the player, where they are actually seen
+      const r = (instant ? 10 : 28) + Math.pow(Math.random(), 1.8) * 95;
       const x = g.focus.x + Math.sin(ang) * r;
       const z = g.focus.z + Math.cos(ang) * r;
       const bi = Math.floor((x + 360) / PITCH);
@@ -122,7 +125,7 @@ export class NPCs {
       const vx = pt.x - cam.x;
       const vz = pt.z - cam.z;
       const dot = (vx * Math.sin(g.camYaw) + vz * Math.cos(g.camYaw)) / (Math.hypot(vx, vz) || 1);
-      if (r < 80 && dot > 0.6) continue;
+      if (!instant && r < 80 && dot > 0.6) continue;
       const a = g.spawnActor('civilian', randomOutfit(), pt.x, pt.z);
       a.ai.mode = 'wander';
       a.ai.blockIdx = BLOCKS.indexOf(b);
@@ -131,7 +134,47 @@ export class NPCs {
       a.ai.lane = rand(-1.3, 1.3);
       a.ai.speed = rand(1.2, 1.7);
       a.hp = a.maxHp = 60;
+      const roll = Math.random();
+      if (roll < 0.1) {
+        // two people stopped for a chat
+        const yaw = Math.random() * Math.PI * 2;
+        const bx = pt.x + Math.sin(yaw) * 1.25;
+        const bz = pt.z + Math.cos(yaw) * 1.25;
+        const res = g.world.resolveCircle(bx, bz, 0.4, groundHeight(bx, bz), 1.5);
+        const f = g.spawnActor('civilian', randomOutfit(), res.x, res.z);
+        Object.assign(f.ai, { blockIdx: a.ai.blockIdx, perim: a.ai.perim, dir: -a.ai.dir, lane: a.ai.lane, speed: rand(1.2, 1.6) });
+        f.hp = f.maxHp = 60;
+        const t = rand(12, 40);
+        for (const [p, q] of [
+          [a, f],
+          [f, a],
+        ]) {
+          p.ai.mode = 'chat';
+          p.ai.timer = t + rand(0, 4);
+          p.ai.tx = q.x;
+          p.ai.tz = q.z;
+          p.yaw = Math.atan2(q.x - p.x, q.z - p.z);
+          p.rig.gesture = 'talk';
+        }
+      } else if (roll < 0.3) a.rig.gesture = 'phone';
       return;
+    }
+  }
+
+  /** Fill the streets around the player right away (game start, respawn, teleport). */
+  populate(limit = Infinity) {
+    const g = this.g;
+    // drop untagged pedestrians left far behind (after a teleport or respawn)
+    for (const a of [...g.actors]) if (a.team === 'civilian' && !a.tag && Math.hypot(a.x - g.focus.x, a.z - g.focus.z) > 150) g.removeActor(a);
+    const cap = g.env.night > 0.6 ? Math.round(this.maxPeds * 0.6) : this.maxPeds;
+    let added = 0;
+    for (let i = 0; i < cap * 3 && added < limit; i++) {
+      let civs = 0;
+      for (const a of g.actors) if (a.team === 'civilian' && !a.dead) civs++;
+      if (civs >= cap) break;
+      const before = g.actors.length;
+      this.spawnPed(true);
+      added += g.actors.length - before;
     }
   }
 
@@ -140,6 +183,7 @@ export class NPCs {
     const ai = a.ai;
     ai.timer -= dt;
     a.pose = 'move';
+    if (ai.mode === 'flee' || ai.mode === 'cower' || ai.mode === 'handsUp') a.rig.gesture = 'none';
     switch (ai.mode) {
       case 'wander': {
         const b = BLOCKS[ai.blockIdx];
@@ -170,6 +214,15 @@ export class NPCs {
         a.move(dt, g.world, 0, 0, 20, false);
         a.pose = 'idle';
         if (ai.timer <= 0) ai.mode = ai.roamR > 0 ? 'roam' : 'wander';
+        break;
+      case 'chat':
+        a.move(dt, g.world, 0, 0, 20, false);
+        a.pose = 'idle';
+        a.yaw = lerpAngle(a.yaw, Math.atan2(ai.tx - a.x, ai.tz - a.z), damp(4, dt));
+        if (ai.timer <= 0) {
+          a.rig.gesture = Math.random() < 0.25 ? 'phone' : 'none';
+          ai.mode = ai.roamR > 0 ? 'roam' : 'wander';
+        }
         break;
       case 'roam': {
         const d = Math.hypot(ai.tx - a.x, ai.tz - a.z);

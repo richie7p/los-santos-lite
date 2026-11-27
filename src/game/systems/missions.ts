@@ -370,14 +370,14 @@ export class Missions {
       const tx = o.dx ?? o.x;
       const tz = o.dz ?? o.z;
       const d = Math.hypot(tx - px, tz - pz);
-      if (o.kind === 'ammu' && d < 3 && !p.vehicle) return `按 [E] 進入 ${o.name}`;
-      if (o.kind === 'garage' && d < 5 && p.vehicle) return `按 [E] 使用 ${o.name}（維修／烤漆）`;
-      if (o.kind === 'safehouse' && d < 3 && !p.vehicle) return '按 [E] 存檔並休息';
-      if (o.kind === 'courier' && Math.hypot(o.x - px, o.z - pz) < 4 && !this.run && !p.vehicle) return '按 [E] 開始快鴿速遞外送工作';
+      if (o.kind === 'ammu' && d < 3 && !p.vehicle) return `${g.hint('E')} 進入 ${o.name}`;
+      if (o.kind === 'garage' && d < 5 && p.vehicle) return `${g.hint('E')} 使用 ${o.name}（維修／烤漆）`;
+      if (o.kind === 'safehouse' && d < 3 && !p.vehicle) return `${g.hint('E')} 存檔並休息`;
+      if (o.kind === 'courier' && Math.hypot(o.x - px, o.z - pz) < 4 && !this.run && !p.vehicle) return `${g.hint('E')} 開始快鴿速遞外送工作`;
     }
     if (!this.run) {
       for (const r of RACES) {
-        if (Math.hypot(r.start[0] - px, r.start[1] - pz) < 6 && p.vehicle) return `按 [E] 開始 ${r.name}${this.raceBest[r.id] ? `（最佳 ${this.raceBest[r.id].toFixed(1)} 秒）` : ''}`;
+        if (Math.hypot(r.start[0] - px, r.start[1] - pz) < 6 && p.vehicle) return `${g.hint('E')} 開始 ${r.name}${this.raceBest[r.id] ? `（最佳 ${this.raceBest[r.id].toFixed(1)} 秒）` : ''}`;
       }
     }
     return null;
@@ -574,6 +574,7 @@ export class Missions {
     if (!def) return;
     this.begin(def);
     this.g.big(def.title, def.brief, '#facc15');
+    this.g.cinematic(4);
     this.g.audio.jingle('start');
   }
 
@@ -628,7 +629,13 @@ export class Missions {
     if (!r.def.activity) {
       this.progress++;
       g.stats.missions = this.progress;
-      g.big('任務完成', `${r.def.title}　+$${r.def.reward.toLocaleString()}`, '#facc15');
+      const mins = Math.floor(r.t / 60);
+      const secs = Math.floor(r.t % 60);
+      g.big('任務完成', r.def.title, '#facc15', [
+        ['獎金', `$${r.def.reward.toLocaleString()}`],
+        ['用時', `${mins}:${String(secs).padStart(2, '0')}`],
+        ['主線進度', `${this.progress} / ${this.story.length}`],
+      ]);
       g.audio.jingle('complete');
       g.addCash(r.def.reward);
       if (this.progress >= this.story.length) {
@@ -796,7 +803,7 @@ function buildStory(g: Game, m: Missions): MissionDef[] {
             g.setSubtitle('老韓（電話）：「小子，回來就好。路邊那台星途轎車是我的，開過來修車廠。」', 4);
           }),
           {
-            obj: '坐上路邊的【星途轎車】（按 F）',
+            obj: g.input.touch ? '坐上路邊的【星途轎車】（點 [上車]）' : '坐上路邊的【星途轎車】（按 [F]）',
             enter: () => {
               car = g.spawnVehicle('sedan', -230, -86.5, Math.PI / 2, 0x1a5276);
               car.tag = 'mission';
@@ -1216,7 +1223,7 @@ function buildStory(g: Game, m: Missions): MissionDef[] {
             update: () => {
               if (!heli || heli.destroyed) return { fail: '直升機被毀了' };
               const alive = guards.filter((a) => !a.dead).length;
-              g.hudObjective(alive ? `解決看守（剩餘 ${alive}），搶下直升機` : '坐上直升機（按 F）');
+              g.hudObjective(alive ? `解決看守（剩餘 ${alive}），搶下直升機` : (g.input.touch ? '坐上直升機（點 [上車]）' : '坐上直升機（按 [F]）'));
               if (g.player.vehicle === heli) {
                 g.police.addHeat(3, '機場保全報警');
                 return 'next';
@@ -1233,7 +1240,7 @@ function buildStory(g: Game, m: Missions): MissionDef[] {
                 return;
               }
               const d = Math.hypot(heli.x - 560, heli.z + 1000);
-              g.hudObjective(d < 40 ? '降落在山莊旁（按 Shift 下降）' : '飛到【鏡湖山莊】並降落');
+              g.hudObjective(d < 40 ? (g.input.touch ? '降落在山莊旁（按住 [下降]）' : '降落在山莊旁（按住 [Shift] 下降）') : '飛到【鏡湖山莊】並降落');
               if (d < 30 && !heli.airborne && heli.speed < 3) return 'next';
             },
           },

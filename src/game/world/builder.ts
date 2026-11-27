@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GRID_RES, GRID_SAMPLES, GRID_STEP, gridAt, heightGrid } from './heightGrid';
 import { buildDetails, type Emitter } from './details';
+import { RoomKind, addInteriors, interiorUniforms } from '../render/interiors';
 import { StaticWorld } from '../core/collision';
 import { rng, smoothstep } from '../core/math';
 import {
@@ -325,6 +326,19 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(position, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform sampler2D tDepth;\nuniform float uTime;\nuniform float uHalf;')
+      // two differently scaled, rotated and drifting samples of the ripple map: no visible tiling from above
+      .replace(
+        '#include <normal_fragment_maps>',
+        THREE.ShaderChunk.normal_fragment_maps.replace(
+          'vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;',
+          `vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
+          vec2 uv2 = mat2(0.8, -0.6, 0.6, 0.8) * vNormalMapUv * 0.37 + vec2(uTime * -0.0021, uTime * 0.0013);
+          vec3 mapN2 = texture2D( normalMap, uv2 ).xyz * 2.0 - 1.0;
+          // far away only the large ripples remain, so the small tile never shows as a grid
+          float farW = smoothstep(50.0, 380.0, length(vViewPosition));
+          mapN = normalize(vec3(mix(mapN.xy + mapN2.xy, mapN2.xy * 1.2, farW), mapN.z * mapN2.z));`,
+        ),
+      )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
@@ -340,8 +354,10 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
         diffuseColor.a = clamp(mix(0.72, 0.94, smoothstep(0.0, 3.0, depth)) + foam * 0.25, 0.0, 1.0);`,
       );
   };
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(14000, 14000), waterMat);
-  water.rotation.x = -Math.PI / 2;
+  // The sea is built from 250 m tiles instead of one 14 km quad: huge triangles that cross the
+  // near plane lose depth precision on some GPUs and resolutions (the sea then shows through the
+  // streets). Tiles that are dry land everywhere are skipped, which also saves fill rate.
+  const water = new THREE.Mesh(waterGeometry(), waterMat);
   water.position.y = SEA_LEVEL;
   water.receiveShadow = true;
   water.name = 'water';
@@ -638,6 +654,18 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     });
     f.map.anisotropy = maxAniso;
     nightMaterials.push({ mat: m, max: 0.75 });
+    // rooms behind the windows (rooms per tile, bay size in meters, what kind of rooms)
+    const rooms: Partial<Record<FacadeStyle, [[number, number], RoomKind]>> = {
+      glass: [[2, 4], RoomKind.Office],
+      office: [[2, 4], RoomKind.Office],
+      civic: [[2, 3], RoomKind.Office],
+      apartment: [[4, 4], RoomKind.Home],
+      brick: [[3, 4], RoomKind.Home],
+      house: [[2, 2], RoomKind.Home],
+      shop: [[1, 2], RoomKind.Shop],
+    };
+    const room = rooms[s];
+    if (room) addInteriors(m, { cells: room[0], size: [f.tileW / room[0][0], f.tileH / room[0][1]], kind: room[1], mask: 'metalness' });
     root.add(mesh(merge(wallGeoms[s]), m, true, true));
   }
   root.add(mesh(merge(roofGeoms), new THREE.MeshStandardMaterial({ map: tex.roof, vertexColors: true, roughness: 0.9 }), true, true));
@@ -834,7 +862,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     fog: true,
   });
   {
-    const pg = new THREE.PlaneGeometry(16, 16);
+    const pg = new THREE.PlaneGeometry(22, 22);
     pg.rotateX(-Math.PI / 2);
     const mats = lampPositions.map((p) => new THREE.Matrix4().makeTranslation(p.x, CURB_H + 0.04, p.z));
     const im = new THREE.InstancedMesh(pg, poolMat, mats.length);
@@ -1315,6 +1343,7 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
   let night = 0;
   let wetness = 0;
   const update = (dt: number, time: number) => {
+    interiorUniforms.uTimeF.value = time;
     for (const a of animated) a.obj.rotation[a.axis] += a.speed * dt;
     waterNormal.offset.set(time * 0.004, time * 0.0025);
     waterUniforms.uTime.value = time;
@@ -1324,16 +1353,19 @@ export function buildWorld(scene: THREE.Scene, col: StaticWorld, maxAniso: numbe
     signalLightMat.emissive.copy(signalLightMat.color);
   };
   const setNight = (n: number) => {
+    interiorUniforms.uNightF.value = n;
     if (Math.abs(n - night) < 0.002) return;
     night = n;
     for (const { mat, max } of nightMaterials) mat.emissiveIntensity = Math.max(mat === lampHeadMat ? 0 : 0.02, n * max);
-    poolMat.opacity = smoothstep(0.3, 0.9, n) * 0.32 * (1 + wetness * 1.3);
+    poolMat.opacity = smoothstep(0.3, 0.9, n) * 0.46 * (1 + wetness * 1.1);
     if (poolMesh) poolMesh.visible = n > 0.3;
+    details.spillMat.opacity = smoothstep(0.35, 0.9, n) * 0.55 * (1 + wetness * 0.8);
+    details.spillMat.visible = n > 0.3;
   };
   const setWet = (w: number) => {
     if (Math.abs(w - wetness) < 0.01) return;
     wetness = w;
-    poolMat.opacity = smoothstep(0.3, 0.9, night) * 0.32 * (1 + w * 1.3);
+    poolMat.opacity = smoothstep(0.3, 0.9, night) * 0.46 * (1 + w * 1.1);
     for (const m of wetMats) {
       m.mat.roughness = m.dryR + (m.wetR - m.dryR) * w;
       m.mat.color.copy(m.dryC).multiplyScalar(1 + (m.dark - 1) * w);
@@ -1622,4 +1654,49 @@ function windTurbine() {
   }
   root.add(rotor);
   return { root, rotor };
+}
+
+/** Sea surface as a grid of 250 m tiles (XZ plane, y = 0), without the tiles that lie entirely on land. */
+function waterGeometry() {
+  const CELL = 250;
+  const HALF = 7000;
+  const n = (HALF * 2) / CELL;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  const dry = (x0: number, z0: number) => {
+    // only tiles inside the terrain grid can be land; sample them on a 25 m lattice
+    if (x0 < -WORLD_HALF || z0 < -WORLD_HALF || x0 + CELL > WORLD_HALF || z0 + CELL > WORLD_HALF) return false;
+    const step = Math.round(25 / GRID_STEP);
+    const i0 = Math.round((x0 + WORLD_HALF) / GRID_STEP);
+    const j0 = Math.round((z0 + WORLD_HALF) / GRID_STEP);
+    const cells = Math.round(CELL / GRID_STEP);
+    for (let j = 0; j <= cells; j += step) for (let i = 0; i <= cells; i += step) if (gridAt(i0 + i, j0 + j) < SEA_LEVEL + 1.2) return false;
+    return true;
+  };
+  for (let cz = 0; cz < n; cz++)
+    for (let cx = 0; cx < n; cx++) {
+      const x0 = -HALF + cx * CELL;
+      const z0 = -HALF + cz * CELL;
+      if (dry(x0, z0)) continue;
+      const b = pos.length / 3;
+      for (const [dx, dz] of [
+        [0, 0],
+        [CELL, 0],
+        [0, CELL],
+        [CELL, CELL],
+      ]) {
+        pos.push(x0 + dx, 0, z0 + dz);
+        // same UV mapping as the old 14 km plane so the normal map repeat keeps its scale
+        uv.push((x0 + dx + HALF) / (HALF * 2), 1 - (z0 + dz + HALF) / (HALF * 2));
+      }
+      idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(pos.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  return g;
 }

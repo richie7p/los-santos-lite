@@ -61,7 +61,9 @@ export interface HudState {
   subtitle: string | null;
   prompt: string | null;
   toasts: Toast[];
-  big: { title: string; sub?: string; color?: string; id: number } | null;
+  big: { title: string; sub?: string; color?: string; id: number; rows?: [string, string][] } | null;
+  /** Cinematic letterbox bars (mission intros). */
+  letterbox: boolean;
   hit: number;
   kill: number;
   spread: number;
@@ -99,8 +101,27 @@ function loadSettings(): Settings {
   } catch {
     /* storage unavailable */
   }
-  // phones and tablets start on the light preset
-  return { ...DEFAULT_SETTINGS, quality: isTouchDevice() ? 'low' : DEFAULT_SETTINGS.quality };
+  // phones and tablets: medium on capable GPUs, light preset otherwise (auto quality steps down further)
+  return { ...DEFAULT_SETTINGS, quality: isTouchDevice() ? mobileTier() : DEFAULT_SETTINGS.quality };
+}
+
+/** Rough GPU tier for phones and tablets from the WebGL renderer string. */
+export function mobileTier(): Quality {
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') as WebGL2RenderingContext | null;
+    if (!gl) return 'low';
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    // Apple A-series, Adreno 6xx+, Mali-G7x/G610+, Immortalis, Xclipse
+    if (/apple gpu|apple a1[4-9]|apple m\d/i.test(name)) return 'medium';
+    if (/adreno[^\d]*(\d{3})/i.test(name)) return Number(/adreno[^\d]*(\d{3})/i.exec(name)![1]) >= 640 ? 'medium' : 'low';
+    if (/immortalis|xclipse|mali-g(7[1-9]|[6-9]\d{2})/i.test(name)) return 'medium';
+    return 'low';
+  } catch {
+    return 'low';
+  }
 }
 
 export function saveSettings(s: Settings) {
@@ -141,6 +162,7 @@ export const useHud = create<HudState>((set) => ({
   prompt: null,
   toasts: [],
   big: null,
+  letterbox: false,
   hit: 0,
   kill: 0,
   spread: 0,
